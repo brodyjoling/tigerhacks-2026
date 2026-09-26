@@ -3,3 +3,5 @@
 *.fna
 *.gtf
 
+__pycache__/
+*.pyc
