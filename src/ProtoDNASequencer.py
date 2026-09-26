@@ -43,6 +43,14 @@ class ProtoDNASequencer:
     def getGC_Content(self):
         return self.gc_content
 
+    def printSequenceAndComplement(self):
+        if self.seq is None or self.complement is None:
+            print("Sequence or complement not loaded.")
+            return
+
+        print("Index\tBase\tComplement")
+        for i, (base, comp_base) in enumerate(zip(str(self.seq), str(self.complement))):
+            print(f"{i}\t{base}\t{comp_base}")
 
 def main():
     p = ProtoDNASequencer("GCF_000001405.40_GRCh38.p14_genomic.fna")
