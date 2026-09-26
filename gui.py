@@ -80,7 +80,7 @@ def create_dna_helix(arr, position):
     dna.shader = twist_shader
     dna.set_shader_input('min_height', min_height)
     dna.set_shader_input('span', max_height - min_height)
-    dna.set_shader_input('twist_amount', 0.0)
+    dna.set_shader_input('twist_amount', 1.0)
 
     dna.max_twist = math.radians(36) * length
 
@@ -91,11 +91,11 @@ helices = [
     create_dna_helix(arr2, [-4, .5, 0]),
 ]
 
-twisting = False
-twist_amount = 0 # a number from 0 - 1 of a helix's twist that is applied
+twisting = True
+twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
 
 def update():
-    global twist_amount 
+    global twist_amount, twisting
 
     if mouse.left:
         camera.x -= mouse.velocity[0] * camera.fov
@@ -112,6 +112,11 @@ def update():
     for h in helices:
         h.set_shader_input('twist_amount', twist_amount * h.max_twist)
 
+    if camera.fov < 15:
+        twisting = False
+    else:
+        twisting = True
+
 
 def input(key):
     global twisting
@@ -120,9 +125,5 @@ def input(key):
         camera.fov = max(5, camera.fov - 2)
     if key == 'scroll down':
         camera.fov = min(60, camera.fov + 2)
-    if key == 'space':
-        twisting = True
-    if key == 'space up':
-        twisting = False
 
 app.run()
