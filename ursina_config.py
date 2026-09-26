@@ -1,6 +1,7 @@
-from ursina import window, camera
+from ursina import window, camera, Vec2
 
 TITLE = 'DNA Visualizer 4135'
+SIZE = Vec2(1500, 1200)
 
 def apply_window_config():
     window.title = 'DNA Visualizer 4135'

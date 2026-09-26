@@ -2,7 +2,7 @@ from ursina import *
 from ursina_config import *
 from shader import twist_shader
 
-app = Ursina(title = TITLE)
+app = Ursina(title = TITLE, size=SIZE)
 
 apply_window_config()
 apply_camera_config()
@@ -99,10 +99,10 @@ def update():
 
     if mouse.left:
         camera.x -= mouse.velocity[0] * camera.fov
-        camera.y -= mouse.velocity[1] * (camera.fov + 35)
+        camera.y -= mouse.velocity[1] * (camera.fov + 0)
 
     camera.x = clamp(camera.x, -30, 30)
-    camera.y = clamp(camera.y, -30, 30)
+    camera.y = clamp(camera.y, -25, 25)
 
     if twisting:
         twist_amount = min(twist_amount + 2 * time.dt, 1)
