@@ -35,6 +35,7 @@ def parse_attributes(attribute_string):
         attributes[key] = value.strip('"')
 
     return attributes
+    
 def find_gene_by_name(gene_name):
 
     with open(GTF_FILE, "r") as file:
