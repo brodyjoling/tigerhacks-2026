@@ -75,11 +75,13 @@ menu_title = Text(
 def select_chromosome(index):
     global pending_selection
     chromosome_menu.enabled = False
+    show_side_panels()
     back_btn.enabled = True
+    txt.enabled = True
     txt.text = 'Loading sequence data...' if not data_ready else 'Rendering Gene.....'
 
     if data_ready:
-        load_data(index)
+        invoke(load_data, index, delay=0.1)
     else:
         pending_selection = index  # picked up in update() once parsing finishes
 
@@ -198,12 +200,11 @@ back_btn = Button(
 )
 
 def go_back_to_menu():
-    global helix, offset, scroll_offset
+    global helix, offset, scroll_offset, show_panels
     if helix is not None:
         destroy(helix)
         helix = None
-    left_panel.enabled = False
-    right_panel.enabled = False
+    hide_side_panels()
     back_btn.enabled = False
     chromosome_menu.enabled = True
     offset = 0
@@ -311,35 +312,32 @@ def load_data(index):
     # chromosomes = p.getChromosomeIds()
     choice = chromosomes[index]
 
+    p.sequenceChromosome(choice)
+
     sequence = p.getSeq(choice)
     complement = p.getComplement(choice)
     helix_length = len(sequence)
 
-    destroy(txt)
+    txt.enabled = False
     refersh_visible_helix()
 
 twisting = True
 twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
 
+PANEL_SLIDE_DURATION = 0.3
+
+def show_side_panels():
+    left_panel.animate_x(window.left.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
+    right_panel.animate_x(window.right.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
+
+def hide_side_panels():
+    left_panel.animate_x(window.left.x - 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
+    right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
+
 def update():
     global twist_amount, twisting, scroll_offset, pending_selection, show_panels
 
-    if show_panels:
-        if left_panel.x < window.left.x:
-            left_panel.x += 10 * time.dt
-        else:
-            left_panel.x = left_panel.x - 10 * time.dt
-
-        if abs(left_panel.x - window.left.x) < .1:
-            left_panel.x = window.left.x
-    else:
-        if left_panel.x > window.left.x:
-            left_panel.x -= 10 * time.dt
-        else:
-            left_panel.x = left_panel.x + 10 * time.dt
-
-        if abs(left_panel.x - window.left.x) < .1:
-            left_panel.x = window.left.x - 5
+    
 
     if pending_selection is not None and data_ready:
         load_data(pending_selection)
