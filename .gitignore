@@ -5,3 +5,4 @@
 
 __pycache__/
 *.pyc
+data/genome/gencode.v50.chr_patch_hapl_scaff.annotation.gtf
