@@ -86,10 +86,22 @@ def create_dna_helix(arr, position):
 
     return dna
 
-helices = [
-    create_dna_helix(arr, [0, 0, 0]),
-    create_dna_helix(arr2, [-4, .5, 0]),
-]
+# ** THIS GOES THROUGH THE DATA **
+pending_data = []
+spawn_x = 0
+spacing = 5
+helices_per_frame = 5
+
+def queue_helix(arr):
+    global spawn_x
+    pending_data.append((arr, [spawn_x, 0, 0]))
+    spawn_x += spacing
+
+helices = []
+
+# ** QUEUE HERE **
+queue_helix(arr)
+queue_helix(arr2)
 
 twisting = True
 twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
@@ -116,6 +128,13 @@ def update():
         twisting = False
     else:
         twisting = True
+
+    # Build Helices
+    for _ in range(helices_per_frame):
+        if not pending_data:
+            break
+        arr_data, position = pending_data.pop(0)
+        helices.append(create_dna_helix(arr_data, position))
 
 
 def input(key):
