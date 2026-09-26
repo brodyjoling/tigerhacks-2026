@@ -377,7 +377,7 @@ def main():
     #     seq = Seq("N" * 100 + "ACT" + "N" * 50)          # positions 101-103 -> "ACT"
     #     complement = Seq("N" * 100 + "TGA" + "N" * 50)    # complement of the above
 
-    p = ProtoDNASequencer()
+    p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
     p.load_sequence()
     chrom_data = p.getChromosome("NC_000011.10")
 
