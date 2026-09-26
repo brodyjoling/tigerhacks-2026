@@ -15,7 +15,40 @@ apply_camera_config()
 
 txt = Text(text='Rendering Gene.....', orgin=(0, 0), scale=2)
 
-# ** COLORS **
+zoom_in_btn = Button(
+    text='+', 
+    parent=camera.ui, 
+    scale=0.1,
+    position=(-0.52, -0.4),
+    model='quad', 
+    radius=0.5, 
+    origin=(0, 0), 
+    text_origin=(0,0), 
+    text_size=1, 
+    text_color=color.white, 
+    color=color.gray, 
+    collider='box', 
+    highlight_scale=1, 
+    pressed_scale=1, 
+    disabled=False)
+
+zoom_out_btn = Button(
+    text='-', 
+    parent=camera.ui, 
+    scale=0.1,
+    position=(-0.3, -0.4),
+    model='quad', 
+    radius=0.1, 
+    origin=(1, 0), 
+    text_origin=(0,0), 
+    text_size=1, 
+    text_color=color.white, 
+    color=color.gray, 
+    collider='box', 
+    highlight_scale=1, 
+    pressed_scale=1, 
+    disabled=False)
+
 color_palette = {
     "A": color.hex('#7ffbaa'),
     "T": color.hex('#d87ef7'),
@@ -25,6 +58,19 @@ color_palette = {
     " ": color.red,
     "backbone": color.hex('#8790aa')
     }
+
+target_camera_fov = camera.fov
+
+def zoom_in():
+    global target_camera_fov
+    target_camera_fov = max(5, camera.fov - 5)
+
+def zoom_out():
+    global target_camera_fov
+    target_camera_fov = min(20, camera.fov + 5)
+
+zoom_in_btn.on_click = zoom_in
+zoom_out_btn.on_click = zoom_out
 
 def add_cube(vertices, triangles, colors, center, scale, cube_color): # claude code
     cx, cy, cz = center
@@ -145,12 +191,20 @@ def update():
     else:
         twist_amount = max(twist_amount - 2 * time.dt, 0)
 
+    if camera.fov != target_camera_fov:
+        if camera.fov < target_camera_fov:
+            camera.fov = camera.fov + 20 * time.dt
+        else:
+            camera.fov = camera.fov - 20 * time.dt
+
+        if abs(camera.fov - target_camera_fov) < 1:
+            camera.fov = target_camera_fov
     if helix is not None:
         scroll_offset += (0 - scroll_offset) * min(scroll_decay_speed * time.dt, 1)
         helix.set_shader_input('scroll_offset', scroll_offset)
         helix.set_shader_input('twist_amount', twist_amount * helix.max_twist)
 
-    if camera.fov < 15:
+    if camera.fov <= 13:
         twisting = False
     else:
         twisting = True
