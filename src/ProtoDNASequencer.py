@@ -52,19 +52,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# base_pairs = []
-# for i, (base, comp_base) in enumerate(zip(str(seq), str(complement))):
-#     base_pairs.append({
-#         "index": i,
-#         "base": base,
-#         "complement": comp_base,
-#     })
-
-# def printPairsAndInfo(pairs):
-#     for x in pairs:
-#         print(str(x.get("index")) + ": " + x.get("base") + x.get("complement"))
-#         # sleep(0.001)
-
-# printPairsAndInfo(base_pairs)

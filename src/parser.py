@@ -6,7 +6,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from ProtoDNASequencer import ProtoDNASequencer
+from src.ProtoDNASequencer import ProtoDNASequencer
 
 
 GTF_FILE = PROJECT_ROOT / "genomic.gtf"
