@@ -1,10 +1,21 @@
 
 
-from webbrowser import get
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT))
+
+from ProtoDNASequencer import ProtoDNASequencer
 
 
-GTF_FILE = r"data/genome/gencode.v50.chr_patch_hapl_scaff.annotation.gtf"
-FASTA_FILE = r"data/genome/GRCh38.p14.genome.fa"
+GTF_FILE = PROJECT_ROOT / "genomic.gtf"
+FASTA_FILE = PROJECT_ROOT / "GCF_000001405.40_GRCh38.p14_genomic.fna"
+
+sequencer = ProtoDNASequencer(FASTA_FILE)
+sequencer.load_sequence()
+
+
 def parse_attributes(attribute_string):
     attributes = {}
 
@@ -40,10 +51,10 @@ def find_gene_by_name(gene_name):
 
             attributes = parse_attributes(fields[8])
 
-            if attributes.get("gene_name") == gene_name:
+            if attributes.get("gene_name", attributes.get("gene")) == gene_name:
                 return {
                     "chromosome": fields[0],
-                    "gene": attributes.get("gene_name"),
+                    "gene": attributes.get("gene_name", attributes.get("gene")),
                     "gene_id": attributes.get("gene_id"),
                     "start": int(fields[3]),
                     "end": int(fields[4]),
@@ -77,8 +88,8 @@ def find_gene(chromosome, position):
                 attributes = parse_attributes(fields[8])
 
                 return {
-                    "gene": attributes.get("gene_name"),
-                    "chromosome": attributes.get("chromosome"),
+                    "gene": attributes.get("gene_name", attributes.get("gene")),
+                    "chromosome": fields[0],
                     "gene_id": attributes.get("gene_id"),
                     "start": start,
                     "end": end,
@@ -149,41 +160,25 @@ def find_exons(transcript_id):
     return exons
 
 def get_sequence(chromosome, start, end):
+    first_chromosome = sequencer.getRecord().id
 
-    sequence = []
-    reading_chromosome = False
-
-    with open(FASTA_FILE, "r") as file:
-
-        for line in file:
-
-            line = line.strip()
-
-            if line.startswith(">"):
-                current_chromosome = line[1:].split()[0]
-
-                if current_chromosome == chromosome:
-                    reading_chromosome = True
-                else:
-                    reading_chromosome = False
-
-                continue
-
-            if reading_chromosome:
-                sequence.append(line)
-
-    chromosome_sequence = "".join(sequence)
+    if chromosome != first_chromosome:
+        return None
 
     # GTF coordinates are 1-based and inclusive.
     # Python slices are 0-based and end-exclusive.
-    return chromosome_sequence[start - 1:end]
+    return sequencer.getSeq()[start - 1:end]
 
-HBB_gene = find_gene_by_name("HBB")
+first_chromosome_gene = find_gene("NC_000001.11", 14000)
 
-print(HBB_gene)
+print(first_chromosome_gene)
 
-
-print(get_sequence(HBB_gene["chromosome"], HBB_gene["start"], HBB_gene["end"]))
+if first_chromosome_gene:
+    print(get_sequence(
+        first_chromosome_gene["chromosome"],
+        first_chromosome_gene["start"],
+        first_chromosome_gene["end"],
+    ))
 # gene = find_gene("chr1", 14001)
 # print(gene)
 # print("\n")
