@@ -90,7 +90,7 @@ def create_dna_helix(arr, position):
 pending_data = []
 spawn_x = 0
 spacing = 5
-helices_per_frame = 5
+helices_per_frame = 3
 
 def queue_helix(arr):
     global spawn_x
