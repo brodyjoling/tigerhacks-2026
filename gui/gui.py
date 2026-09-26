@@ -2,6 +2,7 @@ from ursina import *
 from ursina_config import *
 from shader import twist_shader
 from itertools import zip_longest
+from time import perf_counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -12,7 +13,7 @@ app = Ursina(title = TITLE, size=SIZE)
 apply_window_config()
 apply_camera_config()
 
-txt = Text(text='Loading gene data.....', orgin=(0, 0), scale=2)
+txt = Text(text='Rendering Gene.....', orgin=(0, 0), scale=2)
 
 # ** COLORS **
 pair_colors = {
@@ -43,9 +44,8 @@ def create_base_pairs(sequence, complement, length, position, spacing, scale_y):
 
     # loop through one sequence and complement at a time
     for i, (s, c) in enumerate(zip_longest(sequence, complement, fillvalue="")):
-        #make sure to catch spaces (empty)
         offset_y = (i + 0.5) / length
-        position_y = -scale_y / 2 + offset_y * scale_y
+        position_y = scale_y / 2 - offset_y * scale_y
 
         left_pos  = [-spacing / 2, position_y, 0]
         right_pos = [spacing / 2, position_y, 0]
@@ -57,6 +57,8 @@ def create_base_pairs(sequence, complement, length, position, spacing, scale_y):
     return base_pairs
 
 def create_dna_helix(sequence, complement, position):
+    start_time = perf_counter()
+
     length = len(sequence)
     spacing = 0.5
 
@@ -81,6 +83,9 @@ def create_dna_helix(sequence, complement, position):
 
     dna.max_twist = math.radians(36) * length
 
+    elapsed_time = perf_counter() - start_time
+    print(f"Time to render DNA helix: {elapsed_time} seconds")
+
     return dna
 
 helices = []
@@ -97,6 +102,7 @@ def queue_helix(sequence, complement):
 def load_data():
     p = ProtoDNASequencer("data/gene.fna")
     p.load_sequence()
+    # p.printSequenceAndComplement()
     queue_helix(p.getSeq(), p.getComplement())
     destroy(txt)
 
