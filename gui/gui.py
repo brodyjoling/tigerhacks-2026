@@ -1,11 +1,22 @@
 from ursina import *
 from ursina_config import *
 from shader import twist_shader
+from itertools import zip_longest
 
 app = Ursina(title = TITLE, size=SIZE)
 
 apply_window_config()
 apply_camera_config()
+
+# ** COLORS **
+pair_colors = {
+    "A": color.hex('#7ffbaa'),
+    "T": color.hex('#d87ef7'),
+    "C": color.hex('#f67da2'),
+    "G": color.hex('#7f8afa'),
+    " ": color.red
+    }
+
 
 # ** TEST DICTIONARY ARRAYS **
 arr = [
@@ -26,8 +37,7 @@ arr2 = [
     {"base": "C", "`complement": "G"},
     ]
 
-def create_backbone(length, position, spacing):
-    scale_y = spacing * length
+def create_backbone(length, position, spacing, scale_y):
     backbone = Entity(model=None)
 
     for i in range(length + 1):
@@ -42,32 +52,43 @@ def create_backbone(length, position, spacing):
     backbone.combine()
     return backbone
 
-def create_base_pairs(arr, position, spacing):
-    length = len(arr)
-    total_height = spacing * length
-
+def create_base_pairs(sequence, complement, length, position, spacing, scale_y):
     base_pairs = Entity(model=None)
 
-    for i, pair in enumerate(arr):
-        t = (i + 0.5) / length
-        position_y = -total_height / 2 + t * total_height
+    # loop through one sequence and complement at a time
+    for i, (s, c) in enumerate(zip_longest(sequence, complement, fillvalue="")):
+        #make sure to catch spaces (empty)
+        offset_y = (i + 0.5) / length
+        position_y = -scale_y / 2 + offset_y * scale_y
 
         left_pos  = [-spacing / 2, position_y, 0]
         right_pos = [spacing / 2, position_y, 0]
+        
+        Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=left_pos, color=pair_colors.get(s))
+        Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=right_pos, color=pair_colors.get(c))
 
-        Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=left_pos, color=color.blue)
-        Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=right_pos, color=color.green)
+    # for i, pair in enumerate(arr):
+    #     t = (i + 0.5) / length
+    #     position_y = -scale_y / 2 + t * scale_y
+
+    #     left_pos  = [-spacing / 2, position_y, 0]
+    #     right_pos = [spacing / 2, position_y, 0]
+
+    #     Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=left_pos, color=color.blue)
+    #     Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=right_pos, color=color.green)
 
     base_pairs.combine()
     return base_pairs
 
-def create_dna_helix(arr, position):
-    length = len(arr)
+def create_dna_helix(sequence, complement, position):
+    length = len(sequence)
+    spacing = 0.5
 
     dna = Entity(model=None, position=position)
 
-    backbone = create_backbone(length, position, 0.5)
-    base_pairs = create_base_pairs(arr, position, 0.5)
+    scale_y = spacing * length
+    backbone = create_backbone(length, position, spacing, scale_y)
+    base_pairs = create_base_pairs(sequence, complement, length, position, spacing, scale_y)
 
     backbone.parent = dna
     base_pairs.parent = dna
@@ -100,8 +121,12 @@ def queue_helix(arr):
 helices = []
 
 # ** QUEUE HERE **
-queue_helix(arr)
-queue_helix(arr2)
+
+
+
+
+# queue_helix(arr)
+# queue_helix(arr2)
 
 twisting = True
 twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
