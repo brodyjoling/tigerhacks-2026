@@ -3,51 +3,15 @@ from ursina_config import *
 from shader import twist_shader
 from itertools import zip_longest
 from time import perf_counter
+import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from src.ProtoDNASequencer import *
 
 app = Ursina(title = TITLE, size=SIZE)
 
 apply_window_config()
 apply_camera_config()
-
-txt = Text(text='Rendering Gene.....', orgin=(0, 0), scale=2)
-
-zoom_in_btn = Button(
-    text='+', 
-    parent=camera.ui, 
-    scale=0.1,
-    position=(-0.52, -0.4),
-    model='quad', 
-    radius=0.5, 
-    origin=(0, 0), 
-    text_origin=(0,0), 
-    text_size=1, 
-    text_color=color.white, 
-    color=color.gray, 
-    collider='box', 
-    highlight_scale=1, 
-    pressed_scale=1, 
-    disabled=False)
-
-zoom_out_btn = Button(
-    text='-', 
-    parent=camera.ui, 
-    scale=0.1,
-    position=(-0.3, -0.4),
-    model='quad', 
-    radius=0.1, 
-    origin=(1, 0), 
-    text_origin=(0,0), 
-    text_size=1, 
-    text_color=color.white, 
-    color=color.gray, 
-    collider='box', 
-    highlight_scale=1, 
-    pressed_scale=1, 
-    disabled=False)
 
 color_palette = {
     "A": color.hex('#7ffbaa'),
@@ -59,6 +23,132 @@ color_palette = {
     "backbone": color.hex('#8790aa')
     }
 
+images = [
+    ('../images/c1.png', lambda: print('clicked 1')),
+    ('../images/c2.png', lambda: print('clicked 2')),
+    ('../images/c3.png', lambda: print('clicked 3')),
+    ('../images/c4.png', lambda: print('clicked 4')),
+    ('../images/c5.png', lambda: print('clicked 5')),
+    ('../images/c6.png', lambda: print('clicked 6')),
+    ('../images/c7.png', lambda: print('clicked 7')),
+    ('../images/c8.png', lambda: print('clicked 8')),
+    ('../images/c9.png', lambda: print('clicked 9')),
+    ('../images/c10.png', lambda: print('clicked 10')),
+    ('../images/c11.png', lambda: print('clicked 11')),
+    ('../images/c12.png', lambda: print('clicked 12')),
+    ('../images/c13.png', lambda: print('clicked 13')),
+    ('../images/c14.png', lambda: print('clicked 14')),
+    ('../images/c15.png', lambda: print('clicked 15')),
+    ('../images/c16.png', lambda: print('clicked 16')),
+    ('../images/c17.png', lambda: print('clicked 17')),
+    ('../images/c18.png', lambda: print('clicked 18')),
+    ('../images/c19.png', lambda: print('clicked 19')),
+    ('../images/c20.png', lambda: print('clicked 20')),
+    ('../images/c21.png', lambda: print('clicked 21')),
+    ('../images/c22.png', lambda: print('clicked 22')),
+    ('../images/c23.png', lambda: print('clicked 23')),
+    ('../images/c24.png', lambda: print('clicked 24')),
+]
+
+p = None
+chromosomes = []
+data_ready = False
+pending_selection = None
+
+chromosome_menu = Entity(parent=camera.ui)
+
+menu_cols = 6
+menu_spacing_x = 0.09
+menu_spacing_y = 0.12
+menu_rows = math.ceil(len(images) / menu_cols)
+grid_width = (menu_cols - 1) * menu_spacing_x
+grid_height = (menu_rows- 1) * menu_spacing_y
+
+menu_title = Text(
+    parent=chromosome_menu,
+    text='Select a Chromosome',
+    origin=(0, 0),
+    y=grid_height / 2 + 0.15,
+    scale=1.5,
+)
+
+def select_chromosome(index):
+    global pending_selection
+    chromosome_menu.enabled = False
+    back_btn.enabled = True
+    txt.text = 'Loading sequence data...' if not data_ready else 'Rendering Gene.....'
+
+    if data_ready:
+        load_data(index)
+    else:
+        pending_selection = index  # picked up in update() once parsing finishes
+
+for i, (image, chrom_num) in enumerate(images):
+    row = i // menu_cols
+    col = i % menu_cols
+
+    x = -grid_width / 2 + col * menu_spacing_x
+    y = grid_height / 2 - row * menu_spacing_y
+
+    button = Button(
+        parent=chromosome_menu,
+        texture=image,
+        scale=0.07,
+        position=(x, y),
+        color=color.white,
+        highlight_color=color.white.tint(-.1),
+    )
+    button.on_click = Func(select_chromosome, i)
+
+left_panel = Entity(
+    parent=camera.ui,
+    origin=(0, 0),
+    x=window.left.x - 5
+)
+
+left_background = Entity(
+    parent=left_panel,
+    model='quad',
+    color=color.hex("#4F525C"),
+    scale=(0.35, 1),
+    origin=(-0.5, 0)
+)
+
+right_panel = Entity(
+    parent=camera.ui,
+    origin=(0, 0),
+    x=window.right.x + 5
+)
+
+right_background = Entity(
+    parent=right_panel,
+    model='quad',
+    color=color.hex("#4F525C"),
+    scale=(0.35, 1),
+    origin=(0.5, 0)
+)
+
+panel_width = right_background.scale_x
+
+info_title = Text(
+    parent=right_panel,
+    text='fun facts or som',
+    origin=(0, 0),
+    x=-panel_width / 2,
+    y=0.4,
+    scale=1.2
+)
+
+info_text = Text(
+    parent=right_panel,
+    text='Select a chromosome to\nvisualize the DNA!',
+    origin=(0, 0),
+    x=-panel_width / 2,
+    y=0.2,
+    scale=0.8
+)
+
+txt = Text(text='Rendering Gene.....', orgin=(0, 0), scale=2)
 target_camera_fov = camera.fov
 
 def zoom_in():
@@ -69,8 +159,57 @@ def zoom_out():
     global target_camera_fov
     target_camera_fov = min(20, camera.fov + 5)
 
+zoom_in_btn = Button(
+    text='+', 
+    parent=left_panel, 
+    scale=0.1,
+    position=(.1, -.4),
+    model='quad', 
+    radius=0.5, 
+    text_size=1, 
+    text_color=color.white, 
+    color=color.gray, 
+    highlight_scale=1, 
+    pressed_scale=1, 
+    disabled=False)
+
+zoom_out_btn = Button(
+    text='-', 
+    parent=left_panel, 
+    scale=0.1,
+    position=(.2, -.4),
+    model='quad', 
+    radius=0.1, 
+    text_size=1, 
+    text_color=color.white, 
+    color=color.gray, 
+    collider='box', 
+    highlight_scale=1, 
+    pressed_scale=1, 
+    disabled=False)
+
 zoom_in_btn.on_click = zoom_in
 zoom_out_btn.on_click = zoom_out
+
+back_btn = Button(
+    text='< Back', parent=camera.ui, scale=(0.15, 0.06),
+    position=(window.top_left.x + 0.1, window.top_left.y - 0.05),
+    color=color.gray, text_color=color.white, enabled=False,
+)
+
+def go_back_to_menu():
+    global helix, offset, scroll_offset
+    if helix is not None:
+        destroy(helix)
+        helix = None
+    left_panel.enabled = False
+    right_panel.enabled = False
+    back_btn.enabled = False
+    chromosome_menu.enabled = True
+    offset = 0
+    scroll_offset = 0.0
+
+back_btn.on_click = go_back_to_menu
 
 def add_cube(vertices, triangles, colors, center, scale, cube_color): # claude code
     cx, cy, cz = center
@@ -133,15 +272,15 @@ offset = 0
 window_size = 50
 p = None
 helix_length = 0
-
 sequence = ''
 complement = ''
 
 SPACING = 0.5
 SCROLL_STEP = 5
-scroll_shift_amount = SCROLL_STEP * SPACING
 scroll_offset = 0.0
 scroll_decay_speed = 12.0
+
+show_panels = False
 
 def refersh_visible_helix(direction=0):
     global helix
@@ -153,37 +292,64 @@ def refersh_visible_helix(direction=0):
     helix = create_dna_helix(visible_sequence, visible_complement, (0, 0, 0))
     helix.set_shader_input('scroll_offset', scroll_offset)
 
-def load_data():
+def background_load():
+    global p, chromosomes, data_ready
+    p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
+    # p = ProtoDNASequencer("data/gene.fna")
+    p.load_sequence()
+    chromosomes = p.getChromosomeIds()
+    data_ready = True
+
+threading.Thread(target=background_load, daemon=True).start()
+
+def load_data(index):
     global p, helix_length, sequence, complement
 
-    p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
-    p.load_sequence()
+    # p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
+    # p.load_sequence()
 
-    start_time = perf_counter()
-    sequence = p.getSeq()
-    elapsed_time = perf_counter() - start_time
-    print(f"getSeq took {elapsed_time:.6f} seconds")
+    # chromosomes = p.getChromosomeIds()
+    choice = chromosomes[index]
 
-    start_time = perf_counter()
-    complement = p.getComplement()
-    elapsed_time = perf_counter() - start_time
-    print(f"getComplement took {elapsed_time:.6f} seconds")
-
+    sequence = p.getSeq(choice)
+    complement = p.getComplement(choice)
     helix_length = len(sequence)
+
     destroy(txt)
     refersh_visible_helix()
-
-invoke(load_data, delay=1)
 
 twisting = True
 twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
 
 def update():
-    global twist_amount, twisting, scroll_offset
+    global twist_amount, twisting, scroll_offset, pending_selection, show_panels
 
+    if show_panels:
+        if left_panel.x < window.left.x:
+            left_panel.x += 10 * time.dt
+        else:
+            left_panel.x = left_panel.x - 10 * time.dt
+
+        if abs(left_panel.x - window.left.x) < .1:
+            left_panel.x = window.left.x
+    else:
+        if left_panel.x > window.left.x:
+            left_panel.x -= 10 * time.dt
+        else:
+            left_panel.x = left_panel.x + 10 * time.dt
+
+        if abs(left_panel.x - window.left.x) < .1:
+            left_panel.x = window.left.x - 5
+
+    if pending_selection is not None and data_ready:
+        load_data(pending_selection)
+        pending_selection = None
+
+    if helix is None:
+        return
+    
     if mouse.left:
         camera.y -= mouse.velocity[1] * camera.fov
-
     camera.y = clamp(camera.y, -5, 5)
 
     if twisting:
@@ -199,18 +365,17 @@ def update():
 
         if abs(camera.fov - target_camera_fov) < 1:
             camera.fov = target_camera_fov
-    if helix is not None:
-        scroll_offset += (0 - scroll_offset) * min(scroll_decay_speed * time.dt, 1)
-        helix.set_shader_input('scroll_offset', scroll_offset)
-        helix.set_shader_input('twist_amount', twist_amount * helix.max_twist)
 
-    if camera.fov <= 13:
-        twisting = False
-    else:
-        twisting = True
+    scroll_offset += (0 - scroll_offset) * min(scroll_decay_speed * time.dt, 1)
+    helix.set_shader_input('scroll_offset', scroll_offset)
+    helix.set_shader_input('twist_amount', twist_amount * helix.max_twist)
+
+    twisting = camera.fov > 13
 
 def input(key):
     global offset, scroll_offset
+    if helix is None:
+        return
 
     if key == 'scroll up' and offset > 0:
         step = min(SCROLL_STEP, offset)
