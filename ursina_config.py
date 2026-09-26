@@ -1,4 +1,4 @@
-from ursina import window, camera, Vec2
+from ursina import window, camera, Vec2, color
 
 TITLE = 'DNA Visualizer 4135'
 SIZE = Vec2(1500, 1200)
@@ -12,6 +12,7 @@ def apply_window_config():
     window.cog_button.enabled = False
     window.collider_counter.enabled = False
     window.fps_counter.enabled = False
+    window.color = color.hex('#456a7d')
 
 def apply_camera_config():
     camera.orthographic = True
