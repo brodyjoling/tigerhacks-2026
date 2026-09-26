@@ -3,10 +3,16 @@ from ursina_config import *
 from shader import twist_shader
 from itertools import zip_longest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.ProtoDNASequencer import *
+
 app = Ursina(title = TITLE, size=SIZE)
 
 apply_window_config()
 apply_camera_config()
+
+txt = Text(text='Loading gene data.....', orgin=(0, 0), scale=2)
 
 # ** COLORS **
 pair_colors = {
@@ -16,26 +22,6 @@ pair_colors = {
     "G": color.hex('#7f8afa'),
     " ": color.red
     }
-
-
-# ** TEST DICTIONARY ARRAYS **
-arr = [
-    {"base": "A", "complement": "T"},
-    {"base": "C", "`complement": "G"},
-    {"base": "A", "complement": "T"},
-    {"base": "C", "`complement": "G"},
-    {"base": "A", "complement": "T"},
-    {"base": "C", "`complement": "G"},
-    {"base": "A", "complement": "T"},
-    {"base": "A", "complement": "T"},
-    ]
-
-arr2 = [
-    {"base": "A", "complement": "T"},
-    {"base": "C", "`complement": "G"},
-    {"base": "A", "complement": "T"},
-    {"base": "C", "`complement": "G"},
-    ]
 
 def create_backbone(length, position, spacing, scale_y):
     backbone = Entity(model=None)
@@ -67,16 +53,6 @@ def create_base_pairs(sequence, complement, length, position, spacing, scale_y):
         Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=left_pos, color=pair_colors.get(s))
         Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=right_pos, color=pair_colors.get(c))
 
-    # for i, pair in enumerate(arr):
-    #     t = (i + 0.5) / length
-    #     position_y = -scale_y / 2 + t * scale_y
-
-    #     left_pos  = [-spacing / 2, position_y, 0]
-    #     right_pos = [spacing / 2, position_y, 0]
-
-    #     Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=left_pos, color=color.blue)
-    #     Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=right_pos, color=color.green)
-
     base_pairs.combine()
     return base_pairs
 
@@ -107,26 +83,24 @@ def create_dna_helix(sequence, complement, position):
 
     return dna
 
-# ** THIS GOES THROUGH THE DATA **
+helices = []
 pending_data = []
 spawn_x = 0
 spacing = 5
 helices_per_frame = 3
 
-def queue_helix(arr):
+def queue_helix(sequence, complement):
     global spawn_x
-    pending_data.append((arr, [spawn_x, 0, 0]))
+    pending_data.append((sequence, complement, [spawn_x, 0, 0]))
     spawn_x += spacing
 
-helices = []
+def load_data():
+    p = ProtoDNASequencer("data/gene.fna")
+    p.load_sequence()
+    queue_helix(p.getSeq(), p.getComplement())
+    destroy(txt)
 
-# ** QUEUE HERE **
-
-
-
-
-# queue_helix(arr)
-# queue_helix(arr2)
+invoke(load_data, delay=1)
 
 twisting = True
 twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
@@ -138,8 +112,8 @@ def update():
         camera.x -= mouse.velocity[0] * camera.fov
         camera.y -= mouse.velocity[1] * (camera.fov + 0)
 
-    camera.x = clamp(camera.x, -30, 30)
-    camera.y = clamp(camera.y, -25, 25)
+    # camera.x = clamp(camera.x, -30, 30)
+    # camera.y = clamp(camera.y, -25, 25)
 
     if twisting:
         twist_amount = min(twist_amount + 2 * time.dt, 1)
@@ -158,8 +132,8 @@ def update():
     for _ in range(helices_per_frame):
         if not pending_data:
             break
-        arr_data, position = pending_data.pop(0)
-        helices.append(create_dna_helix(arr_data, position))
+        sequence, complement, position = pending_data.pop(0)
+        helices.append(create_dna_helix(sequence, complement, position))
 
 
 def input(key):
@@ -168,6 +142,6 @@ def input(key):
     if key == 'scroll up':
         camera.fov = max(5, camera.fov - 2)
     if key == 'scroll down':
-        camera.fov = min(60, camera.fov + 2)
+        camera.fov = min(200, camera.fov + 2)
 
 app.run()
