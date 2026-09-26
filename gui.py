@@ -1,16 +1,13 @@
 from ursina import *
+from ursina_config import *
+from shader import twist_shader
 
-app = Ursina()
+app = Ursina(title = TITLE)
 
-camera.orthographic = True
-camera.fov = 20
-camera.position=(0, 0, -30)
+apply_window_config()
+apply_camera_config()
 
-window.title = 'DNA Visualizer'
-window.borderless = False
-window.fullscreen = False
-window.exit_button.visible = False
-
+# ** TEST DICTIONARY ARRAYS **
 arr = [
     {"base": "A", "complement": "T"},
     {"base": "C", "`complement": "G"},
@@ -30,14 +27,18 @@ arr2 = [
     ]
 
 def create_backbone(length, position, spacing):
-    left_pos  = [position[0] - spacing, position[1], position[2]]
-    right_pos = [position[0] + spacing, position[1], position[2]]
-
+    scale_y = spacing * length
     backbone = Entity(model=None)
 
-    left = Entity(parent=backbone, model='cube', scale=(0.15, spacing * length, 0.15), position=left_pos, color='#8790aa')
-    right = Entity(parent=backbone, model='cube', scale=(0.15, spacing * length, 0.15), position=right_pos, color='#8790aa')
+    for i in range(length + 1):
+        position_y = -scale_y / 2 + i * spacing
 
+        left_pos  = [-spacing, position_y, 0]
+        right_pos = [spacing, position_y, 0]
+
+        Entity(parent=backbone, model='cube', scale=(0.15, spacing, 0.15), position=left_pos, color='#8790aa')
+        Entity(parent=backbone, model='cube', scale=(0.15, spacing, 0.15), position=right_pos, color='#8790aa')
+    
     backbone.combine()
     return backbone
 
@@ -46,17 +47,16 @@ def create_base_pairs(arr, position, spacing):
     total_height = spacing * length
 
     base_pairs = Entity(model=None)
-    pairs = []
 
     for i, pair in enumerate(arr):
         t = (i + 0.5) / length
-        y = position[1] - total_height / 2 + t * total_height
+        position_y = -total_height / 2 + t * total_height
 
-        left_pos  = [position[0] - spacing /2, y, position[2]]
-        right_pos = [position[0] + spacing /2, y, position[2]]
+        left_pos  = [-spacing / 2, position_y, 0]
+        right_pos = [spacing / 2, position_y, 0]
 
-        pairs.append(Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=left_pos, color=color.blue))
-        pairs.append(Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=right_pos, color=color.green))
+        Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=left_pos, color=color.blue)
+        Entity(parent=base_pairs, model='cube', scale=(spacing, 0.1, 0.1), position=right_pos, color=color.green)
 
     base_pairs.combine()
     return base_pairs
@@ -64,22 +64,39 @@ def create_base_pairs(arr, position, spacing):
 def create_dna_helix(arr, position):
     length = len(arr)
 
-    dna = Entity(model=None)
+    dna = Entity(model=None, position=position)
 
     backbone = create_backbone(length, position, 0.5)
     base_pairs = create_base_pairs(arr, position, 0.5)
 
     backbone.parent = dna
     base_pairs.parent = dna
+
+    dna.combine()
+
+    ys = [v[1] for v in dna.model.vertices]
+    min_height, max_height = min(ys), max(ys)
+
+    dna.shader = twist_shader
+    dna.set_shader_input('min_height', min_height)
+    dna.set_shader_input('span', max_height - min_height)
+    dna.set_shader_input('twist_amount', 0.0)
+
+    dna.max_twist = math.radians(36) * length
+
     return dna
 
-position = [0, 0, 0]
-helix = create_dna_helix(arr, position)
+helices = [
+    create_dna_helix(arr, [0, 0, 0]),
+    create_dna_helix(arr2, [-4, .5, 0]),
+]
 
-position = [-4, .5, 0]
-helix = create_dna_helix(arr2, position)
+twisting = False
+twist_amount = 0 # a number from 0 - 1 of a helix's twist that is applied
 
 def update():
+    global twist_amount 
+
     if mouse.left:
         camera.x -= mouse.velocity[0] * camera.fov
         camera.y -= mouse.velocity[1] * (camera.fov + 35)
@@ -87,11 +104,25 @@ def update():
     camera.x = clamp(camera.x, -30, 30)
     camera.y = clamp(camera.y, -30, 30)
 
+    if twisting:
+        twist_amount = min(twist_amount + 2 * time.dt, 1)
+    else:
+        twist_amount = max(twist_amount - 2 * time.dt, 0)
+
+    for h in helices:
+        h.set_shader_input('twist_amount', twist_amount * h.max_twist)
+
 
 def input(key):
+    global twisting
+
     if key == 'scroll up':
         camera.fov = max(5, camera.fov - 2)
     if key == 'scroll down':
         camera.fov = min(60, camera.fov + 2)
+    if key == 'space':
+        twisting = True
+    if key == 'space up':
+        twisting = False
 
 app.run()
