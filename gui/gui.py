@@ -20,7 +20,10 @@ color_palette = {
     "G": color.hex('#7f8afa'),
     "N": color.gray,
     " ": color.red,
-    "backbone": color.hex('#8790aa')
+    "backbone": color.hex('#8790aa'),
+    "bg": color.hex('#456a7d'),
+    "fg": color.hex("#588aa3"),
+    "highlight": color.hex("#67a2bf"),
     }
 
 images = [
@@ -70,7 +73,14 @@ menu_title = Text(
     origin=(0, 0),
     y=grid_height / 2 + 0.15,
     scale=1.5,
+    font='../fonts/IBMPlexSans-Regular.ttf',
 )
+
+def handle_back_btn(index):
+    if not data_ready:
+        return
+
+    select_chromosome(i)
 
 def select_chromosome(index):
     global pending_selection
@@ -81,7 +91,7 @@ def select_chromosome(index):
     txt.text = 'Loading sequence data...' if not data_ready else 'Rendering Gene.....'
 
     if data_ready:
-        invoke(load_data, index, delay=0.1)
+        invoke(load_data, index, delay=0.5)
     else:
         pending_selection = index  # picked up in update() once parsing finishes
 
@@ -99,8 +109,11 @@ for i, (image, chrom_num) in enumerate(images):
         position=(x, y),
         color=color.white,
         highlight_color=color.white.tint(-.1),
+        text=f"{i+1}",
+        font='../fonts/IBMPlexSans-Regular.ttf',
     )
-    button.on_click = Func(select_chromosome, i)
+    button.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
+    button.on_click = lambda i=i: handle_back_btn(i)
 
 left_panel = Entity(
     parent=camera.ui,
@@ -111,7 +124,7 @@ left_panel = Entity(
 left_background = Entity(
     parent=left_panel,
     model='quad',
-    color=color.hex("#4F525C"),
+    color=color_palette.get('backbone'),
     scale=(0.35, 1),
     origin=(-0.5, 0)
 )
@@ -125,7 +138,7 @@ right_panel = Entity(
 right_background = Entity(
     parent=right_panel,
     model='quad',
-    color=color.hex("#4F525C"),
+    color=color_palette.get('backbone'),
     scale=(0.35, 1),
     origin=(0.5, 0)
 )
@@ -138,7 +151,8 @@ info_title = Text(
     origin=(0, 0),
     x=-panel_width / 2,
     y=0.4,
-    scale=1.2
+    scale=1.2,
+    font='../fonts/IBMPlexSans-Regular.ttf',
 )
 
 info_text = Text(
@@ -147,10 +161,19 @@ info_text = Text(
     origin=(0, 0),
     x=-panel_width / 2,
     y=0.2,
-    scale=0.8
+    scale=0.8,
+    font='../fonts/IBMPlexSans-Regular.ttf',
 )
 
-txt = Text(text='Rendering Gene.....', orgin=(0, 0), scale=2)
+txt = Text(
+    parent=camera.ui, 
+    text='Loading...', 
+    color=color.light_gray,
+    origin=(0, 0),
+    y=grid_height / 2 + 0.25,
+    scale=1,
+    font='../fonts/IBMPlexSans-Regular.ttf',
+)
 target_camera_fov = camera.fov
 
 def zoom_in():
@@ -162,42 +185,32 @@ def zoom_out():
     target_camera_fov = min(20, camera.fov + 5)
 
 zoom_in_btn = Button(
-    text='+', 
-    parent=left_panel, 
-    scale=0.1,
-    position=(.1, -.4),
-    model='quad', 
-    radius=0.5, 
-    text_size=1, 
-    text_color=color.white, 
-    color=color.gray, 
-    highlight_scale=1, 
-    pressed_scale=1, 
-    disabled=False)
+    text='+', parent=left_panel, scale=(0.1, 0.06),
+    position=(.1, -.45), highlight_color=color_palette.get("highlight"),
+    text_color=color.white, color=color_palette.get("fg"), disabled=False,
+    font='../fonts/IBMPlexSans-Regular.ttf',
+)
 
 zoom_out_btn = Button(
-    text='-', 
-    parent=left_panel, 
-    scale=0.1,
-    position=(.2, -.4),
-    model='quad', 
-    radius=0.1, 
-    text_size=1, 
-    text_color=color.white, 
-    color=color.gray, 
-    collider='box', 
-    highlight_scale=1, 
-    pressed_scale=1, 
-    disabled=False)
+    text='-', parent=left_panel, scale=(0.1, 0.06),
+    position=(.25, -.45), highlight_color=color_palette.get("highlight"),
+    text_color=color.white, color=color_palette.get("fg"), disabled=False,
+    font='../fonts/IBMPlexSans-Regular.ttf',
+)
 
 zoom_in_btn.on_click = zoom_in
 zoom_out_btn.on_click = zoom_out
 
 back_btn = Button(
-    text='< Back', parent=camera.ui, scale=(0.15, 0.06),
-    position=(window.top_left.x + 0.1, window.top_left.y - 0.05),
-    color=color.gray, text_color=color.white, enabled=False,
+    text='Back', parent=left_panel, scale=(0.15, 0.06),
+    position=(.172, .45), highlight_color=color_palette.get("highlight"),
+    color=color_palette.get("fg"), text_color=color.white, enabled=False,
+    font='../fonts/IBMPlexSans-Regular.ttf',
 )
+
+zoom_in_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
+zoom_out_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
+back_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
 
 def go_back_to_menu():
     global helix, offset, scroll_offset, show_panels
@@ -297,7 +310,9 @@ def background_load():
     global p, chromosomes, data_ready
     p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
     # p = ProtoDNASequencer("data/gene.fna")
+    txt.text = "Indexing DNA sequence...\n(this can take up to a minute)"
     p.load_sequence()
+    txt.text = ""
     chromosomes = p.getChromosomeIds()
     data_ready = True
 
