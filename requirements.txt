@@ -1,0 +1,5 @@
+ursina
+biopython
+numpy
+pyfaidx
+psycopg[binary]
