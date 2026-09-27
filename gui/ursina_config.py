@@ -16,5 +16,5 @@ def apply_window_config():
 
 def apply_camera_config():
     camera.orthographic = True
-    camera.fov = 20
+    camera.fov = 10
     camera.position=(0, 0, -30)
