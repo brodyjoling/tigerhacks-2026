@@ -8,7 +8,52 @@ import threading
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.ProtoDNASequencer import *
 
-def refersh_visible_helix(direction=0):
+app = Ursina(title = TITLE, size=SIZE)
+
+apply_window_config()
+apply_camera_config()
+
+color_palette = {
+    "A": color.hex('#7ffbaa'),
+    "T": color.hex('#d87ef7'),
+    "C": color.hex('#f67da2'),
+    "G": color.hex('#7f8afa'),
+    "N": color.gray,
+    " ": color.red,
+    "backbone": color.hex('#8790aa'),
+    "bg": color.hex('#456a7d'),
+    "fg": color.hex("#588aa3"),
+    "highlight": color.hex("#67a2bf"),
+    }
+
+images = [
+    ('../images/c1.png', lambda: print('clicked 1')),
+    ('../images/c2.png', lambda: print('clicked 2')),
+    ('../images/c3.png', lambda: print('clicked 3')),
+    ('../images/c4.png', lambda: print('clicked 4')),
+    ('../images/c5.png', lambda: print('clicked 5')),
+    ('../images/c6.png', lambda: print('clicked 6')),
+    ('../images/c7.png', lambda: print('clicked 7')),
+    ('../images/c8.png', lambda: print('clicked 8')),
+    ('../images/c9.png', lambda: print('clicked 9')),
+    ('../images/c10.png', lambda: print('clicked 10')),
+    ('../images/c11.png', lambda: print('clicked 11')),
+    ('../images/c12.png', lambda: print('clicked 12')),
+    ('../images/c13.png', lambda: print('clicked 13')),
+    ('../images/c14.png', lambda: print('clicked 14')),
+    ('../images/c15.png', lambda: print('clicked 15')),
+    ('../images/c16.png', lambda: print('clicked 16')),
+    ('../images/c17.png', lambda: print('clicked 17')),
+    ('../images/c18.png', lambda: print('clicked 18')),
+    ('../images/c19.png', lambda: print('clicked 19')),
+    ('../images/c20.png', lambda: print('clicked 20')),
+    ('../images/c21.png', lambda: print('clicked 21')),
+    ('../images/c22.png', lambda: print('clicked 22')),
+    ('../images/c23.png', lambda: print('clicked 23')),
+    ('../images/c24.png', lambda: print('clicked 24')),
+]
+
+def refersh_visible_helix():
     global helix
     if helix is not None:
         destroy(helix)
@@ -168,10 +213,20 @@ def hide_side_panels():
     left_panel.animate_x(window.left.x - 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
     right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
 
+def jump_to_line():
+    global offset
+    if search_field.text.isalpha():
+        return
+    line = int(search_field.text)
+    if line > helix_length or line < window_size:
+        return
+    
+    offset = line
+    refersh_visible_helix()
+
+
 def update():
     global twist_amount, twisting, scroll_offset, pending_selection, show_panels
-
-    
 
     if pending_selection is not None and data_ready:
         load_data(pending_selection)
@@ -203,51 +258,6 @@ def update():
     helix.set_shader_input('twist_amount', twist_amount * helix.max_twist)
 
     twisting = camera.fov > 13
-
-app = Ursina(title = TITLE, size=SIZE)
-
-apply_window_config()
-apply_camera_config()
-
-color_palette = {
-    "A": color.hex('#7ffbaa'),
-    "T": color.hex('#d87ef7'),
-    "C": color.hex('#f67da2'),
-    "G": color.hex('#7f8afa'),
-    "N": color.gray,
-    " ": color.red,
-    "backbone": color.hex('#8790aa'),
-    "bg": color.hex('#456a7d'),
-    "fg": color.hex("#588aa3"),
-    "highlight": color.hex("#67a2bf"),
-    }
-
-images = [
-    ('../images/c1.png', lambda: print('clicked 1')),
-    ('../images/c2.png', lambda: print('clicked 2')),
-    ('../images/c3.png', lambda: print('clicked 3')),
-    ('../images/c4.png', lambda: print('clicked 4')),
-    ('../images/c5.png', lambda: print('clicked 5')),
-    ('../images/c6.png', lambda: print('clicked 6')),
-    ('../images/c7.png', lambda: print('clicked 7')),
-    ('../images/c8.png', lambda: print('clicked 8')),
-    ('../images/c9.png', lambda: print('clicked 9')),
-    ('../images/c10.png', lambda: print('clicked 10')),
-    ('../images/c11.png', lambda: print('clicked 11')),
-    ('../images/c12.png', lambda: print('clicked 12')),
-    ('../images/c13.png', lambda: print('clicked 13')),
-    ('../images/c14.png', lambda: print('clicked 14')),
-    ('../images/c15.png', lambda: print('clicked 15')),
-    ('../images/c16.png', lambda: print('clicked 16')),
-    ('../images/c17.png', lambda: print('clicked 17')),
-    ('../images/c18.png', lambda: print('clicked 18')),
-    ('../images/c19.png', lambda: print('clicked 19')),
-    ('../images/c20.png', lambda: print('clicked 20')),
-    ('../images/c21.png', lambda: print('clicked 21')),
-    ('../images/c22.png', lambda: print('clicked 22')),
-    ('../images/c23.png', lambda: print('clicked 23')),
-    ('../images/c24.png', lambda: print('clicked 24')),
-]
 
 p = None
 chromosomes = []
@@ -324,7 +334,7 @@ panel_width = right_background.scale_x
 
 info_title = Text(
     parent=right_panel,
-    text='fun facts or som',
+    text='Information',
     origin=(0, 0),
     x=-panel_width / 2,
     y=0.4,
@@ -334,7 +344,7 @@ info_title = Text(
 
 info_text = Text(
     parent=right_panel,
-    text='Select a chromosome to\nvisualize the DNA!',
+    text='',
     origin=(0, 0),
     x=-panel_width / 2,
     y=0.2,
@@ -377,6 +387,14 @@ back_btn = Button(
     font='../fonts/IBMPlexSans-Regular.ttf',
 )
 
+search_field = InputField(
+    parent=left_panel,
+    default_value='',
+    placeholder='Enter Gene',
+    scale=(0.3, 0.05),
+    position=(.5, 0),
+)
+
 zoom_in_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
 zoom_out_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
 back_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
@@ -397,11 +415,112 @@ scroll_offset = 0.0
 scroll_decay_speed = 12.0
 
 show_panels = False
+
+def refersh_visible_helix(direction=0):
+    global helix, helix_length
+    if helix is not None:
+        destroy(helix)
+
+    print(f"Hello {offset + window_size} HELLo")
+    visible_sequence = sequence[offset:offset + window_size]
+    visible_complement = complement[offset:offset + window_size]
+    helix = create_dna_helix(visible_sequence, visible_complement, (0, 0, 0))
+    helix.set_shader_input('scroll_offset', scroll_offset)
+
+    current_pair = abs(offset - window_size) // 2 + offset
+    info_text.text = f"You are at base pair {current_pair}\nout of {helix_length} pairs\nThis pair is {sequence[current_pair]} and {complement[current_pair]}"
+
+def background_load():
+    global p, chromosomes, data_ready
+    p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
+    txt.text = "Indexing DNA sequence...\n(this can take up to a minute)"
+    p.load_sequence() #DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD********************************************
+    txt.text = ""
+    chromosomes = p.getChromosomeIds()
+    data_ready = True
+
 threading.Thread(target=background_load, daemon=True).start()
+
+def load_data(index):
+    global p, helix_length, sequence, complement, offset
+
+    choice = chromosomes[index]
+
+    p.sequenceChromosome(choice)
+
+    sequence = p.getSeq(choice)
+    complement = p.getComplement(choice)
+    helix_length = len(sequence)
+
+    offset = 20000
+
+    txt.enabled = False
+    refersh_visible_helix()
 
 twisting = True
 twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
 
 PANEL_SLIDE_DURATION = 0.3
+
+def show_side_panels():
+    left_panel.animate_x(window.left.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
+    right_panel.animate_x(window.right.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
+
+def hide_side_panels():
+    left_panel.animate_x(window.left.x - 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
+    right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
+
+def update():
+    global twist_amount, twisting, scroll_offset, pending_selection, show_panels
+
+    if pending_selection is not None and data_ready:
+        load_data(pending_selection)
+        pending_selection = None
+
+    if helix is None:
+        return
+    
+    if mouse.left:
+        camera.y -= mouse.velocity[1] * camera.fov
+    camera.y = clamp(camera.y, -5, 5)
+
+    if twisting:
+        twist_amount = min(twist_amount + 2 * time.dt, 1)
+    else:
+        twist_amount = max(twist_amount - 2 * time.dt, 0)
+
+    if camera.fov != target_camera_fov:
+        if camera.fov < target_camera_fov:
+            camera.fov = camera.fov + 20 * time.dt
+        else:
+            camera.fov = camera.fov - 20 * time.dt
+
+        if abs(camera.fov - target_camera_fov) < 1:
+            camera.fov = target_camera_fov
+
+    scroll_offset += (0 - scroll_offset) * min(scroll_decay_speed * time.dt, 1)
+    helix.set_shader_input('scroll_offset', scroll_offset)
+    helix.set_shader_input('twist_amount', twist_amount * helix.max_twist)
+
+    twisting = camera.fov > 13
+
+def input(key):
+    global offset, scroll_offset
+    if helix is None:
+        return
+
+    if key == 'scroll up' and offset > 0:
+        step = min(SCROLL_STEP, offset)
+        offset -= step
+        scroll_offset -= step * SPACING
+        refersh_visible_helix()
+    if key == 'scroll down':
+        step = min(SCROLL_STEP, helix_length - window_size - offset)
+        offset += step
+        scroll_offset += step * SPACING
+        refersh_visible_helix()
+
+    if key == 'enter':
+        jump_to_line()
 
 app.run()
