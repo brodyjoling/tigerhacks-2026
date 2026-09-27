@@ -24,6 +24,7 @@ color_palette = {
     "bg": color.hex('#456a7d'),
     "fg": color.hex("#588aa3"),
     "highlight": color.hex("#67a2bf"),
+    "highlight2": color.hex("#72b2d2"),
     }
 
 images = [
@@ -53,6 +54,15 @@ images = [
     ('../images/c24.png', lambda: print('clicked 24')),
 ]
 
+def make_accent_panel(parent, scale, position=(0, 0), panel_color=None, radius=0.06, z=.02):
+    return Entity(
+        parent=parent,
+        model=Quad(radius=radius, segments=8, scale=scale),
+        color=panel_color or color_palette.get('bg'),
+        position=position,
+        z=z,
+    )
+
 def refersh_visible_helix():
     global helix
     if helix is not None:
@@ -67,7 +77,7 @@ def background_load():
     global p, chromosomes, data_ready
     p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
     # p = ProtoDNASequencer("data/gene.fna")
-    txt.text = "Indexing DNA sequence...\n(this can take up to a minute)"
+    # txt.text = "Indexing DNA sequence...\n(this can take up to a minute)"
     p.load_sequence()
     txt.text = ""
     chromosomes = p.getChromosomeIds()
@@ -273,6 +283,14 @@ menu_rows = math.ceil(len(images) / menu_cols)
 grid_width = (menu_cols - 1) * menu_spacing_x
 grid_height = (menu_rows- 1) * menu_spacing_y
 
+menu_backing = make_accent_panel(
+    parent= chromosome_menu,
+    scale=(grid_width+0.4, grid_height+0.5),
+    position=(0, grid_height/2 - 0.02),
+    panel_color=color_palette.get('fg'),
+    radius=0.08,
+)
+
 menu_title = Text(
     parent=chromosome_menu,
     text='Select a Chromosome',
@@ -308,35 +326,59 @@ left_panel = Entity(
     x=window.left.x - 5
 )
 
-left_background = Entity(
+left_background = make_accent_panel(
     parent=left_panel,
-    model='quad',
-    color=color_palette.get('backbone'),
-    scale=(0.35, 1),
-    origin=(-0.5, 0)
+    scale=(.7, 1),
+    position=(0,0),
+    panel_color=color_palette.get('fg'),
+    radius=0.04,
+    # z=-.001,
 )
 
+# left_highlight = make_accent_panel(
+#     parent=left_panel,
+#     scale=(.3, .95),
+#     position=(.175,0),
+#     panel_color=color_palette.get('highlight'),
+#     radius=0.04,
+#     z=-.01,
+# )
 right_panel = Entity(
     parent=camera.ui,
     origin=(0, 0),
     x=window.right.x + 5
 )
-
-right_background = Entity(
+# right_highlight = make_accent_panel(
+#     parent=right_panel,
+#     scale=(.5, .5),
+#     position=(.2,0),
+#     panel_color=color_palette.get('highlight'),
+#     radius=0.04,
+#     z=-.01,
+# )
+right_background = make_accent_panel(
     parent=right_panel,
-    model='quad',
-    color=color_palette.get('backbone'),
-    scale=(0.35, 1),
-    origin=(0.5, 0)
+    scale=(.7, 1),
+    position=(0,0),
+    panel_color=color_palette.get('fg'),
+    radius=0.04,
+    # z=-.001,
 )
+# right_background = Entity(
+#     parent=right_panel,
+#     model='quad',
+#     color=color_palette.get('backbone'),
+#     scale=(0.35, 1),
+#     origin=(0.5, 0),
+# )
 
 panel_width = right_background.scale_x
 
 info_title = Text(
     parent=right_panel,
-    text='Information',
+    text='Information:',
     origin=(0, 0),
-    x=-panel_width / 2,
+    x=-.172,
     y=0.4,
     scale=1.2,
     font='../fonts/IBMPlexSans-Regular.ttf',
@@ -346,11 +388,12 @@ info_text = Text(
     parent=right_panel,
     text='',
     origin=(0, 0),
-    x=-panel_width / 2,
+    x=-.172,
     y=0.2,
     scale=0.8,
     font='../fonts/IBMPlexSans-Regular.ttf',
 )
+info_text.font = '../fonts/IBMPlexSans-Regular.ttf'
 
 txt = Text(
     parent=camera.ui, 
@@ -365,15 +408,15 @@ target_camera_fov = camera.fov
 
 zoom_in_btn = Button(
     text='+', parent=left_panel, scale=(0.1, 0.06),
-    position=(.1, -.45), highlight_color=color_palette.get("highlight"),
-    text_color=color.white, color=color_palette.get("fg"), disabled=False,
+    position=(.1, -.425), highlight_color=color_palette.get("highlight2"),
+    text_color=color.white, color=color_palette.get("highlight"), disabled=False,
     font='../fonts/IBMPlexSans-Regular.ttf',
 )
 
 zoom_out_btn = Button(
     text='-', parent=left_panel, scale=(0.1, 0.06),
-    position=(.25, -.45), highlight_color=color_palette.get("highlight"),
-    text_color=color.white, color=color_palette.get("fg"), disabled=False,
+    position=(.25, -.425), highlight_color=color_palette.get("highlight2"),
+    text_color=color.white, color=color_palette.get("highlight"), disabled=False,
     font='../fonts/IBMPlexSans-Regular.ttf',
 )
 
@@ -382,8 +425,8 @@ zoom_out_btn.on_click = zoom_out
 
 back_btn = Button(
     text='Back', parent=left_panel, scale=(0.15, 0.06),
-    position=(.172, .45), highlight_color=color_palette.get("highlight"),
-    color=color_palette.get("fg"), text_color=color.white, enabled=False,
+    position=(.172, .45), highlight_color=color_palette.get("highlight2"),
+    color=color_palette.get("highlight"), text_color=color.white, enabled=False,
     font='../fonts/IBMPlexSans-Regular.ttf',
 )
 
@@ -410,7 +453,7 @@ sequence = ''
 complement = ''
 
 SPACING = 0.5
-SCROLL_STEP = 5
+SCROLL_STEP = 1
 scroll_offset = 0.0
 scroll_decay_speed = 12.0
 
@@ -427,13 +470,13 @@ def refersh_visible_helix(direction=0):
     helix = create_dna_helix(visible_sequence, visible_complement, (0, 0, 0))
     helix.set_shader_input('scroll_offset', scroll_offset)
 
-    current_pair = abs(offset - window_size) // 2 + offset
-    info_text.text = f"You are at base pair {current_pair}\nout of {helix_length} pairs\nThis pair is {sequence[current_pair]} and {complement[current_pair]}"
+    current_pair = offset + window_size // 2
+    info_text.text = f"You are at base pair {current_pair:,}\nout of {helix_length:,} pairs\nThis pair is {sequence[current_pair]} and {complement[current_pair]}"
 
 def background_load():
     global p, chromosomes, data_ready
     p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
-    txt.text = "Indexing DNA sequence...\n(this can take up to a minute)"
+    txt.text = "Indexing DNA sequence...\n(this could take a minute)"
     p.load_sequence() #DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD********************************************
     txt.text = ""
     chromosomes = p.getChromosomeIds()
@@ -470,8 +513,19 @@ def hide_side_panels():
     left_panel.animate_x(window.left.x - 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
     right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
 
+loading_dot_count = 0
+loading_dot_timer = 0
+
 def update():
-    global twist_amount, twisting, scroll_offset, pending_selection, show_panels
+    global twist_amount, twisting, scroll_offset, pending_selection, show_panels, loading_dot_count, loading_dot_timer
+
+    if not data_ready:
+        loading_dot_timer += time.dt
+        if loading_dot_timer >= 0.4:
+            loading_dot_timer = 0
+            loading_dot_count = (loading_dot_count + 1) % 4
+            txt.text = "Indexing DNA sequence" + "." * loading_dot_count + "\n(this can take up to a minute)"
+
 
     if pending_selection is not None and data_ready:
         load_data(pending_selection)
@@ -480,9 +534,9 @@ def update():
     if helix is None:
         return
     
-    if mouse.left:
-        camera.y -= mouse.velocity[1] * camera.fov
-    camera.y = clamp(camera.y, -5, 5)
+    # if mouse.left:
+    #     camera.y -= mouse.velocity[1] * camera.fov
+    # camera.y = clamp(camera.y, -5, 5)
 
     if twisting:
         twist_amount = min(twist_amount + 2 * time.dt, 1)
