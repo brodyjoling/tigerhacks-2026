@@ -471,7 +471,7 @@ def refersh_visible_helix(direction=0):
     helix.set_shader_input('scroll_offset', scroll_offset)
 
     current_pair = offset + window_size // 2
-    info_text.text = f"You are at base pair {current_pair:,}\nout of {helix_length:,} pairs\nThis pair is {sequence[current_pair]} and {complement[current_pair]}"
+    info_text.text = f"You are at base pair {current_pair:,}\nout of {helix_length:,} pairs\nThis pair is {sequence[current_pair].upper()} and {complement[current_pair].upper()}"
 
 def background_load():
     global p, chromosomes, data_ready
