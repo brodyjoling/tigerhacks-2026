@@ -54,6 +54,30 @@ images = [
     ('../images/c24.png', lambda: print('clicked 24')),
 ]
 
+class AppState:
+    def __init__(self):
+        self.p = None
+        self.chromosomes = []
+        self.data_ready = False
+        self.pending_selection = None
+
+        self.helix = None
+        self.offset = 0
+        self.window_size = 50
+        self.helix_length = 0
+        self.sequence = ''
+        self.complement = ''
+
+        self.scroll_offset = 0.0
+        self.twisting = True
+        self.twist_amount = 1
+        self.target_camera_fov = camera.fov
+
+        self.loading_dot_count = 0
+        self.loading_dot_timer = 0
+
+state = AppState()
+
 def make_accent_panel(parent, scale, position=(0, 0), panel_color=None, radius=0.06, z=.02):
     return Entity(
         parent=parent,
@@ -63,56 +87,62 @@ def make_accent_panel(parent, scale, position=(0, 0), panel_color=None, radius=0
         z=z,
     )
 
-def refersh_visible_helix():
-    global helix
-    if helix is not None:
-        destroy(helix)
-
-    visible_sequence = sequence[offset:offset + window_size]
-    visible_complement = complement[offset:offset + window_size]
-    helix = create_dna_helix(visible_sequence, visible_complement, (0, 0, 0))
-    helix.set_shader_input('scroll_offset', scroll_offset)
-
-def background_load():
-    global p, chromosomes, data_ready
-    p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
-    # p = ProtoDNASequencer("data/gene.fna")
-    # txt.text = "Indexing DNA sequence...\n(this can take up to a minute)"
-    p.load_sequence()
+def background_load(state):
+    print("backgrond_load: starting")
+    state.p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
+    # txt.text = "Indexing DNA sequence...\n(this could take a minute)"
+    state.p.load_sequence()
+    print("backgrond_load: getting chromosome IDs")
+    
     txt.text = ""
-    chromosomes = p.getChromosomeIds()
-    data_ready = True
+    state.chromosomes = state.p.getChromosomeIds()
+    state.data_ready = True
+    print("backgrond_load: DONE!")
 
+threading.Thread(target=background_load, args=(state,), daemon=True).start()
 
-def load_data(index):
-    global p, helix_length, sequence, complement
+def refersh_visible_helix(state):
+    if state.helix is not None:
+        destroy(state.helix)
 
-    # p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
-    # p.load_sequence()
+    visible_sequence = state.sequence[state.offset:state.offset + state.window_size]
+    visible_complement = state.complement[state.offset:state.offset + state.window_size]
+    state.helix = create_dna_helix(visible_sequence, visible_complement, (0, 0, 0))
+    state.helix.set_shader_input('scroll_offset', state.scroll_offset)
 
-    # chromosomes = p.getChromosomeIds()
-    choice = chromosomes[index]
+    current_pair = state.offset + state.window_size // 2
+    info_text.text = (
+        f"You are at base pair {current_pair:,}\n"
+        f"out of {state.helix_length:,} pairs\n"
+        f"This pair is {state.sequence[current_pair].upper()} and {state.complement[current_pair].upper()}"
+    )
 
-    p.sequenceChromosome(choice)
-
-    sequence = p.getSeq(choice)
-    complement = p.getComplement(choice)
-    helix_length = len(sequence)
+def load_data(state, index):
+    choice = state.chromosomes[index]
+    state.p.sequenceChromosome(choice)
+    state.sequence = state.p.getSeq(choice)
+    state.complement = state.p.getComplement(choice)
+    state.helix_length = len(state.sequence)
+    state.offset = 20000
 
     txt.enabled = False
-    refersh_visible_helix()
+    refersh_visible_helix(state)
 
+def show_side_panels(): 
+    left_panel.animate_x(window.left.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
+    right_panel.animate_x(window.right.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
+
+def hide_side_panels():
+    left_panel.animate_x(window.left.x - 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
+    right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
 
 def go_back_to_menu():
-    global helix, offset, scroll_offset, show_panels
-    if helix is not None:
-        destroy(helix)
-        helix = None
-    hide_side_panels()
-    back_btn.enabled = False
-    chromosome_menu.enabled = True
-    offset = 0
-    scroll_offset = 0.0
+    if state.helix is not None:
+        destroy(state.helix)
+        state.helix = None
+        hide_side_panels()
+        chromosome_menu.enabled = True
+
 
 
 def add_cube(vertices, triangles, colors, center, scale, cube_color): # claude code
@@ -163,7 +193,6 @@ def create_dna_helix(sequence, complement, position):
     dna.set_shader_input('min_height', -scale_y / 2)
     dna.set_shader_input('span', scale_y)
     dna.set_shader_input('twist_amount', 1.0)
-    dna.set_shader_input('scroll_offset', scroll_offset)
     dna.max_twist = math.radians(36) * length
 
     elapsed_time = perf_counter() - start_time
@@ -172,48 +201,27 @@ def create_dna_helix(sequence, complement, position):
     return dna
 
 def zoom_in():
-    global target_camera_fov
-    target_camera_fov = max(5, camera.fov - 5)
+    state.target_camera_fov = max(5, camera.fov - 5)
 
 def zoom_out():
-    global target_camera_fov
-    target_camera_fov = min(20, camera.fov + 5)
+    state.target_camera_fov = min(20, camera.fov + 5)
 
-
-def input(key):
-    global offset, scroll_offset
-    if helix is None:
+def handle_back_btn(state, index): # does this work?
+    if not state.data_ready:
         return
+    select_chromosome(state, index)
 
-    if key == 'scroll up' and offset > 0:
-        step = min(SCROLL_STEP, offset)
-        offset -= step
-        scroll_offset -= step * SPACING
-        refersh_visible_helix()
-    if key == 'scroll down':
-        step = min(SCROLL_STEP, helix_length - window_size - offset)
-        offset += step
-        scroll_offset += step * SPACING
-        refersh_visible_helix()
-
-def handle_back_btn(index):
-    if not data_ready:
-        return
-
-    select_chromosome(i)
-
-def select_chromosome(index):
-    global pending_selection
+def select_chromosome(state, index):
     chromosome_menu.enabled = False
     show_side_panels()
     back_btn.enabled = True
     txt.enabled = True
-    txt.text = 'Loading sequence data...' if not data_ready else 'Rendering Gene.....'
+    txt.text = 'Indexing Sequence Data...' if not state.data_ready else 'Rendering Gene.....'
 
-    if data_ready:
-        invoke(load_data, index, delay=0.5)
+    if state.data_ready:
+        invoke(load_data, state, index, delay=0.5)
     else:
-        pending_selection = index  # picked up in update() once parsing finishes
+        state.pending_selection = index  # picked up in update() once parsing finishes
 
 def show_side_panels():
     left_panel.animate_x(window.left.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
@@ -223,59 +231,64 @@ def hide_side_panels():
     left_panel.animate_x(window.left.x - 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
     right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
 
-def jump_to_line():
-    global offset
-    if search_field.text.isalpha():
+def jump_to_line(state):
+    if not search_field.text.isdigit():
         return
     line = int(search_field.text)
-    if line > helix_length or line < window_size:
-        return
-    
-    offset = line
-    refersh_visible_helix()
-
+    state.offset = clamp(line, 0, max(0, state.helix_length - state.window_size))
+    refersh_visible_helix(state)
 
 def update():
-    global twist_amount, twisting, scroll_offset, pending_selection, show_panels
-
-    if pending_selection is not None and data_ready:
-        load_data(pending_selection)
-        pending_selection = None
-
-    if helix is None:
-        return
+    if not state.data_ready:
+        state.loading_dot_timer += time.dt
+        if state.loading_dot_timer >= 0.4:
+            state.loading_dot_timer = 0
+            state.loading_dot_count = (state.loading_dot_count + 1) % 4
+            txt.text = "Indexing DNA sequence" + "." * state.loading_dot_count + "\n(this can take up to a minute)"
     
-    if mouse.left:
-        camera.y -= mouse.velocity[1] * camera.fov
-    camera.y = clamp(camera.y, -5, 5)
+    if state.pending_selection is not None and state.data_ready:
+        load_data(state, state.pending_selection)
+        state.pending_selection = None
 
-    if twisting:
-        twist_amount = min(twist_amount + 2 * time.dt, 1)
+    if state.helix is None:
+        return
+
+    if state.twisting:
+        state.twist_amount = min(state.twist_amount + 2 * time.dt, 1)
     else:
-        twist_amount = max(twist_amount - 2 * time.dt, 0)
+        state.twist_amount = max(state.twist_amount - 2 * time.dt, 0)
 
-    if camera.fov != target_camera_fov:
-        if camera.fov < target_camera_fov:
-            camera.fov = camera.fov + 20 * time.dt
+    if camera.fov != state.target_camera_fov:
+        if camera.fov < state.target_camera_fov:
+            camera.fov += 20 * time.dt
         else:
-            camera.fov = camera.fov - 20 * time.dt
+            camera.fov -= 20 * time.dt
+        if abs(camera.fov - state.target_camera_fov) < 1:
+            camera.fov = state.target_camera_fov
 
-        if abs(camera.fov - target_camera_fov) < 1:
-            camera.fov = target_camera_fov
+    state.scroll_offset += (0 - state.scroll_offset) * min(scroll_decay_speed * time.dt, 1)
+    state.helix.set_shader_input('scroll_offset', state.scroll_offset)
+    state.helix.set_shader_input('twist_amount', state.twist_amount * state.helix.max_twist)
+    state.twisting = camera.fov > 13
 
-    scroll_offset += (0 - scroll_offset) * min(scroll_decay_speed * time.dt, 1)
-    helix.set_shader_input('scroll_offset', scroll_offset)
-    helix.set_shader_input('twist_amount', twist_amount * helix.max_twist)
+def input(key):
+    if state.helix is None:
+        return
 
-    twisting = camera.fov > 13
-
-p = None
-chromosomes = []
-data_ready = False
-pending_selection = None
+    if key == 'scroll up' and state.offset > 0:
+        step = min(SCROLL_STEP, state.offset)
+        state.offset -= step
+        state.scroll_offset -= step * SPACING
+        refersh_visible_helix(state)
+    if key == 'scroll down':
+        step = min(SCROLL_STEP, state.helix_length - state.window_size - state.offset)
+        state.offset += step
+        state.scroll_offset += step * SPACING
+        refersh_visible_helix(state)
+    if key == 'enter':
+        jump_to_line(state)
 
 chromosome_menu = Entity(parent=camera.ui)
-
 menu_cols = 6
 menu_spacing_x = 0.09
 menu_spacing_y = 0.12
@@ -318,7 +331,7 @@ for i, (image, chrom_num) in enumerate(images):
         font='../fonts/IBMPlexSans-Regular.ttf',
     )
     button.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
-    button.on_click = lambda i=i: handle_back_btn(i)
+    button.on_click = lambda i=i: handle_back_btn(state, i)
 
 left_panel = Entity(
     parent=camera.ui,
@@ -335,42 +348,19 @@ left_background = make_accent_panel(
     # z=-.001,
 )
 
-# left_highlight = make_accent_panel(
-#     parent=left_panel,
-#     scale=(.3, .95),
-#     position=(.175,0),
-#     panel_color=color_palette.get('highlight'),
-#     radius=0.04,
-#     z=-.01,
-# )
 right_panel = Entity(
     parent=camera.ui,
     origin=(0, 0),
     x=window.right.x + 5
 )
-# right_highlight = make_accent_panel(
-#     parent=right_panel,
-#     scale=(.5, .5),
-#     position=(.2,0),
-#     panel_color=color_palette.get('highlight'),
-#     radius=0.04,
-#     z=-.01,
-# )
+
 right_background = make_accent_panel(
     parent=right_panel,
     scale=(.7, 1),
     position=(0,0),
     panel_color=color_palette.get('fg'),
     radius=0.04,
-    # z=-.001,
 )
-# right_background = Entity(
-#     parent=right_panel,
-#     model='quad',
-#     color=color_palette.get('backbone'),
-#     scale=(0.35, 1),
-#     origin=(0.5, 0),
-# )
 
 panel_width = right_background.scale_x
 
@@ -443,138 +433,10 @@ zoom_out_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
 back_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
 back_btn.on_click = go_back_to_menu
 
-
-helix = None
-offset = 0
-window_size = 50
-p = None
-helix_length = 0
-sequence = ''
-complement = ''
-
 SPACING = 0.5
 SCROLL_STEP = 1
-scroll_offset = 0.0
 scroll_decay_speed = 12.0
 
-show_panels = False
-
-def refersh_visible_helix(direction=0):
-    global helix, helix_length
-    if helix is not None:
-        destroy(helix)
-
-    print(f"Hello {offset + window_size} HELLo")
-    visible_sequence = sequence[offset:offset + window_size]
-    visible_complement = complement[offset:offset + window_size]
-    helix = create_dna_helix(visible_sequence, visible_complement, (0, 0, 0))
-    helix.set_shader_input('scroll_offset', scroll_offset)
-
-    current_pair = offset + window_size // 2
-    info_text.text = f"You are at base pair {current_pair:,}\nout of {helix_length:,} pairs\nThis pair is {sequence[current_pair].upper()} and {complement[current_pair].upper()}"
-
-def background_load():
-    global p, chromosomes, data_ready
-    p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
-    txt.text = "Indexing DNA sequence...\n(this could take a minute)"
-    p.load_sequence() #DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD********************************************
-    txt.text = ""
-    chromosomes = p.getChromosomeIds()
-    data_ready = True
-
-threading.Thread(target=background_load, daemon=True).start()
-
-def load_data(index):
-    global p, helix_length, sequence, complement, offset
-
-    choice = chromosomes[index]
-
-    p.sequenceChromosome(choice)
-
-    sequence = p.getSeq(choice)
-    complement = p.getComplement(choice)
-    helix_length = len(sequence)
-
-    offset = 20000
-
-    txt.enabled = False
-    refersh_visible_helix()
-
-twisting = True
-twist_amount = 1 # a number from 0 - 1 of a helix's twist that is applied
-
 PANEL_SLIDE_DURATION = 0.3
-
-def show_side_panels():
-    left_panel.animate_x(window.left.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
-    right_panel.animate_x(window.right.x, duration=PANEL_SLIDE_DURATION, curve=curve.out_quad)
-
-def hide_side_panels():
-    left_panel.animate_x(window.left.x - 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
-    right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
-
-loading_dot_count = 0
-loading_dot_timer = 0
-
-def update():
-    global twist_amount, twisting, scroll_offset, pending_selection, show_panels, loading_dot_count, loading_dot_timer
-
-    if not data_ready:
-        loading_dot_timer += time.dt
-        if loading_dot_timer >= 0.4:
-            loading_dot_timer = 0
-            loading_dot_count = (loading_dot_count + 1) % 4
-            txt.text = "Indexing DNA sequence" + "." * loading_dot_count + "\n(this can take up to a minute)"
-
-
-    if pending_selection is not None and data_ready:
-        load_data(pending_selection)
-        pending_selection = None
-
-    if helix is None:
-        return
-    
-    # if mouse.left:
-    #     camera.y -= mouse.velocity[1] * camera.fov
-    # camera.y = clamp(camera.y, -5, 5)
-
-    if twisting:
-        twist_amount = min(twist_amount + 2 * time.dt, 1)
-    else:
-        twist_amount = max(twist_amount - 2 * time.dt, 0)
-
-    if camera.fov != target_camera_fov:
-        if camera.fov < target_camera_fov:
-            camera.fov = camera.fov + 20 * time.dt
-        else:
-            camera.fov = camera.fov - 20 * time.dt
-
-        if abs(camera.fov - target_camera_fov) < 1:
-            camera.fov = target_camera_fov
-
-    scroll_offset += (0 - scroll_offset) * min(scroll_decay_speed * time.dt, 1)
-    helix.set_shader_input('scroll_offset', scroll_offset)
-    helix.set_shader_input('twist_amount', twist_amount * helix.max_twist)
-
-    twisting = camera.fov > 13
-
-def input(key):
-    global offset, scroll_offset
-    if helix is None:
-        return
-
-    if key == 'scroll up' and offset > 0:
-        step = min(SCROLL_STEP, offset)
-        offset -= step
-        scroll_offset -= step * SPACING
-        refersh_visible_helix()
-    if key == 'scroll down':
-        step = min(SCROLL_STEP, helix_length - window_size - offset)
-        offset += step
-        scroll_offset += step * SPACING
-        refersh_visible_helix()
-
-    if key == 'enter':
-        jump_to_line()
 
 app.run()
