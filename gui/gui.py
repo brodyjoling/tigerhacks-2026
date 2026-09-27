@@ -82,6 +82,8 @@ class AppState:
         self.loading_dot_count = 0
         self.loading_dot_timer = 0
 
+        self.last_search_text = ""
+
 state = AppState()
 
 def make_accent_panel(parent, scale, position=(0, 0), panel_color=None, radius=0.06, z=.02):
@@ -238,18 +240,80 @@ def hide_side_panels():
     right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
 
 def jump_to_line(state):
-    
     line = int(search_field.text)
     state.offset = clamp(line - state.window_size // 2, 0, max(0, state.helix_length - state.window_size))
     refersh_visible_helix(state)
 
+def jump_to_gene(state, gene=None):
+    if gene == None:
+        print("Searching for gene:", search_field.text)
+        result = find_gene(search_field.text)
+    else:
+        print("Searching for gene:", gene)
+        result = gene
+
+    if result is not None:
+        chromosome = result["chromosome"]
+        if state.p.sequenceChromosome(chromosome) is None:
+            print("Could not load chromosome:", chromosome)
+            return
+
+        start = result["start"] - 1
+        end = result["end"]
+        state.sequence = state.p.getSeq(chromosome)[start:end]
+        state.complement = state.p.getComplement(chromosome)[start:end]
+        state.helix_length = len(state.sequence)
+        state.offset = 0
+        state.scroll_offset = 0.0
+        refersh_visible_helix(state)
+    else:
+        print("Gene not found")
+SUGGESTED_GENES = ['BRCA1', 'TP53', 'EGFR', 'MYC', 'PTEN', 'APOE', 'CFTR']
+
+suggestion_buttons = []
+
+def clear_suggestions():
+    global suggestion_buttons
+    for b in suggestion_buttons:
+        destroy(b)
+    suggestion_buttons = []
+
+def show_suggestions(state, matches):
+    clear_suggestions()
+    for i, gene in enumerate(matches[:5]):  # cap how many show at once
+        btn = Button(
+            parent=left_panel,
+            text=gene,
+            scale=(0.3, 0.04),
+            position=(.5, -0.05 - i * 0.045),
+            color=color_palette.get('fg'),
+            highlight_color=color_palette.get('highlight2'),
+            text_color=color.white,
+        )
+        btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
+        btn.on_click = Func(jump_to_gene, state, gene)
+        suggestion_buttons.append(btn)
+
+
 def update():
+    # if search_field.text != state.last_search_text:
+    #     state.last_search_text = search_field.text
+    #     query = search_field.text.strip().upper()
+    #     if query:
+    #         matches = [g for g in SUGGESTED_GENES if g.startswith(query)]
+    #         show_suggestions(state, matches)
+    #     else:
+    #         clear_suggestions()
+
     if not state.data_ready:
         state.loading_dot_timer += time.dt
         if state.loading_dot_timer >= 0.4:
             state.loading_dot_timer = 0
             state.loading_dot_count = (state.loading_dot_count + 1) % 4
             txt.text = "Indexing DNA sequence" + "." * state.loading_dot_count + "\n(this can take up to a minute)"
+
+    search_placeholder.enabled = search_field.text == ''
+
     
     if state.pending_selection is not None and state.data_ready:
         load_data(state, state.pending_selection)
@@ -295,24 +359,7 @@ def input(key):
             print("Search field is empty")
             return
         if not search_field.text.isdigit():
-            print("Searching for gene:", search_field.text)
-            result = find_gene(search_field.text)
-            if result is not None:
-                chromosome = result["chromosome"]
-                if state.p.sequenceChromosome(chromosome) is None:
-                    print("Could not load chromosome:", chromosome)
-                    return
-
-                start = result["start"] - 1
-                end = result["end"]
-                state.sequence = state.p.getSeq(chromosome)[start:end]
-                state.complement = state.p.getComplement(chromosome)[start:end]
-                state.helix_length = len(state.sequence)
-                state.offset = 0
-                state.scroll_offset = 0.0
-                refersh_visible_helix(state)
-            else:
-                print("Gene not found")
+            jump_to_gene(state)
         else:
             print("Jumping to line:", search_field.text)
             jump_to_line(state)
@@ -471,10 +518,24 @@ back_btn = Button(
 search_field = InputField(
     parent=left_panel,
     default_value='',
-    placeholder='Enter Gene',
     scale=(0.3, 0.05),
-    position=(.5, 0),
+    position=(.175, 0.3),
+    color=color_palette.get('highlight'),
 )
+search_field.text_field.font = '../fonts/IBMPlexSans-Regular.ttf'
+search_field.text_field.highlight_color = color_palette.get('bg')
+search_field.highlight_color = color_palette.get('highlight2')
+
+search_placeholder = Text(
+    parent=search_field,
+    text='Enter Gene or Line',
+    origin=(-0.5, 1),
+    color=color.rgba(255, 255, 255, 120),
+    scale=1,
+    z=-0.1,
+    font='../fonts/IBMPlexSans-Regular.ttf',
+)
+
 
 zoom_in_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
 zoom_out_btn.text_entity.font = '../fonts/IBMPlexSans-Regular.ttf'
