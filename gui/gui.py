@@ -1,11 +1,17 @@
-from ursina import *
-from ursina_config import *
-from shader import twist_shader
+import sys
+from pathlib import Path
 from itertools import zip_longest
 from time import perf_counter
 import threading
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from ursina import *
+import parser
+from ursina_config import *
+from shader import twist_shader
 from src.ProtoDNASequencer import *
 
 app = Ursina(title = TITLE, size=SIZE)
@@ -232,8 +238,7 @@ def hide_side_panels():
     right_panel.animate_x(window.right.x + 5, duration=PANEL_SLIDE_DURATION, curve=curve.in_quad)
 
 def jump_to_line(state):
-    if not search_field.text.isdigit():
-        return
+    
     line = int(search_field.text)
     state.offset = clamp(line - state.window_size // 2, 0, max(0, state.helix_length - state.window_size))
     refersh_visible_helix(state)
@@ -286,8 +291,51 @@ def input(key):
         state.scroll_offset += step * SPACING
         refersh_visible_helix(state)
     if key == 'enter':
-        jump_to_line(state)
+        if search_field.text == "":
+            print("Search field is empty")
+            return
+        if not search_field.text.isdigit():
+            print("Searching for gene:", search_field.text)
+            result = find_gene(search_field.text)
+            if result is not None:
+                chromosome = result["chromosome"]
+                if state.p.sequenceChromosome(chromosome) is None:
+                    print("Could not load chromosome:", chromosome)
+                    return
 
+                start = result["start"] - 1
+                end = result["end"]
+                state.sequence = state.p.getSeq(chromosome)[start:end]
+                state.complement = state.p.getComplement(chromosome)[start:end]
+                state.helix_length = len(state.sequence)
+                state.offset = 0
+                state.scroll_offset = 0.0
+                refersh_visible_helix(state)
+            else:
+                print("Gene not found")
+        else:
+            print("Jumping to line:", search_field.text)
+            jump_to_line(state)
+def get_complement_sequence(x):
+    return ''.join([complement(char) for char in x])
+def complement(x):
+    if(x == 'a'):
+        return 't'
+    if(x == 't'):
+        return 'a'
+    if(x == 'c'):
+        return 'g'
+    if(x == 'g'):
+        return 'c'
+    if(x == 'n'):
+        return 'n'
+    return x
+        
+
+def find_gene(gene_name):
+    # Placeholder implementation for finding a gene by name
+    # This function should search the current chromosome data for the given gene name
+    return parser.find_gene_by_name(gene_name)
 chromosome_menu = Entity(parent=camera.ui)
 menu_cols = 6
 menu_spacing_x = 0.09

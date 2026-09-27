@@ -9,11 +9,10 @@ sys.path.append(str(PROJECT_ROOT))
 from src.ProtoDNASequencer import ProtoDNASequencer
 
 
-GTF_FILE = PROJECT_ROOT / "genomic.gtf"
-FASTA_FILE = PROJECT_ROOT / "GCF_000001405.40_GRCh38.p14_genomic.fna"
+GTF_FILE = PROJECT_ROOT / "data" / "ncbi_dataset" / "GCF_000001405.40" / "genomic.gtf"
+FASTA_FILE = PROJECT_ROOT / "data" / "GCF_000001405.40_GRCh38.p14_genomic.fna"
 
-sequencer = ProtoDNASequencer(FASTA_FILE)
-sequencer.load_sequence()
+sequencer = None
 
 
 def parse_attributes(attribute_string):
@@ -160,25 +159,29 @@ def find_exons(transcript_id):
     return exons
 
 def get_sequence(chromosome, start, end):
-    first_chromosome = sequencer.getRecord().id
+    global sequencer
+    if sequencer is None:
+        sequencer = ProtoDNASequencer(FASTA_FILE)
+        sequencer.load_sequence()
 
-    if chromosome != first_chromosome:
+    if sequencer.sequenceChromosome(chromosome) is None:
         return None
 
     # GTF coordinates are 1-based and inclusive.
     # Python slices are 0-based and end-exclusive.
-    return sequencer.getSeq()[start - 1:end]
+    return sequencer.getSeq(chromosome)[start - 1:end]
 
-first_chromosome_gene = find_gene("NC_000001.11", 14000)
+if __name__ == "__main__":
+    first_chromosome_gene = find_gene("NC_000001.11", 14000)
 
-print(first_chromosome_gene)
+    print(find_gene_by_name("HBB"))
 
-if first_chromosome_gene:
-    print(get_sequence(
-        first_chromosome_gene["chromosome"],
-        first_chromosome_gene["start"],
-        first_chromosome_gene["end"],
-    ))
+    if first_chromosome_gene:
+        print(get_sequence(
+            first_chromosome_gene["chromosome"],
+            first_chromosome_gene["start"],
+            first_chromosome_gene["end"],
+        ))
 # gene = find_gene("chr1", 14001)
 # print(gene)
 # print("\n")
