@@ -9,7 +9,7 @@ sys.path.append(str(PROJECT_ROOT))
 from src.ProtoDNASequencer import ProtoDNASequencer
 
 
-GTF_FILE = PROJECT_ROOT / "data" / "ncbi_dataset" / "GCF_000001405.40" / "genomic.gtf"
+GTF_FILE = PROJECT_ROOT / "data" / "genomic.gtf"
 FASTA_FILE = PROJECT_ROOT / "data" / "GCF_000001405.40_GRCh38.p14_genomic.fna"
 
 sequencer = None
