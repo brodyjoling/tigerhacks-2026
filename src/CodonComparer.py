@@ -93,6 +93,27 @@ class MutationRecord:
     protein_change: Optional[str] = None  # e.g. "p.Glu7Val", when present
     clinical_significance: Optional[str] = None
     condition: Optional[str] = None
+    assembly: Optional[str] = None        # "GRCh37" or "GRCh38" (variant_summary.txt only)
+    review_status: Optional[str] = None   # ClinVar's confidence tier, e.g.
+                                           # "reviewed by expert panel" (variant_summary.txt only)
+
+
+# GRCh38.p14 primary-assembly RefSeq accessions, keyed by the bare
+# chromosome number/letter ClinVar's variant_summary.txt uses in its
+# "Chromosome" column ("11", "X", "MT", etc.) -- maps to the accession
+# ProtoDNASequencer actually uses as a chromosome id ("NC_000011.10").
+# Verified against NCBI's GRCh38 assembly records.
+GRCH38_CHROM_ACCESSIONS = {
+    "1": "NC_000001.11", "2": "NC_000002.12", "3": "NC_000003.12",
+    "4": "NC_000004.12", "5": "NC_000005.10", "6": "NC_000006.12",
+    "7": "NC_000007.14", "8": "NC_000008.11", "9": "NC_000009.12",
+    "10": "NC_000010.11", "11": "NC_000011.10", "12": "NC_000012.12",
+    "13": "NC_000013.11", "14": "NC_000014.9", "15": "NC_000015.10",
+    "16": "NC_000016.10", "17": "NC_000017.11", "18": "NC_000018.10",
+    "19": "NC_000019.10", "20": "NC_000020.11", "21": "NC_000021.9",
+    "22": "NC_000022.11", "X": "NC_000023.11", "Y": "NC_000024.10",
+    "MT": "NC_012920.1",
+}
 
 
 def read_clinvar_vcf(vcf_path: str):
@@ -160,7 +181,7 @@ def read_clinvar_vcf(vcf_path: str):
             )
 
 
-def read_clinvar_variant_summary(tsv_path: str, gene_symbol: Optional[str] = None):
+def read_clinvar_variant_summary(tsv_path: str, gene_symbol: Optional[str] = None, assembly: Optional[str] = "GRCh38"):
     """
     Stream-parse ClinVar's tab-delimited variant_summary.txt(.gz) one row
     at a time, yielding matching MutationRecord objects.
@@ -179,6 +200,13 @@ def read_clinvar_variant_summary(tsv_path: str, gene_symbol: Optional[str] = Non
     Filter to one gene up front (gene_symbol="HBB") -- the full file covers
     every gene ClinVar has ever received a submission for, so without this
     you'd still be iterating everything even though memory stays flat.
+
+    IMPORTANT: variant_summary.txt reports EVERY variant against BOTH
+    GRCh37 and GRCh38 (one row each, distinguished by the Assembly column).
+    Without filtering on assembly, you can pull a GRCh37 coordinate for a
+    variant and use it against a GRCh38-parsed sequence -- wrong position,
+    no error. Defaults to "GRCh38" to match ProtoDNASequencer's FASTA;
+    pass assembly=None to disable the filter (get both).
     """
     import csv
     import gzip
@@ -188,6 +216,8 @@ def read_clinvar_variant_summary(tsv_path: str, gene_symbol: Optional[str] = Non
     with opener(tsv_path, "rt", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
+            if assembly and row.get("Assembly") != assembly:
+                continue
             if gene_symbol and gene_symbol not in (row.get("GeneSymbol") or "").split(";"):
                 continue
 
@@ -216,6 +246,8 @@ def read_clinvar_variant_summary(tsv_path: str, gene_symbol: Optional[str] = Non
                 protein_change=protein_change,
                 clinical_significance=row.get("ClinicalSignificance"),
                 condition=row.get("PhenotypeList"),
+                assembly=row.get("Assembly"),
+                review_status=row.get("ReviewStatus"),
             )
 
 
