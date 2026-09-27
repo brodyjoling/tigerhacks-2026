@@ -235,7 +235,7 @@ def jump_to_line(state):
     if not search_field.text.isdigit():
         return
     line = int(search_field.text)
-    state.offset = clamp(line, 0, max(0, state.helix_length - state.window_size))
+    state.offset = clamp(line - state.window_size // 2, 0, max(0, state.helix_length - state.window_size))
     refersh_visible_helix(state)
 
 def update():
