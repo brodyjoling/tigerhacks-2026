@@ -131,6 +131,7 @@ def load_data(state, index):
     state.sequence = state.p.getSeq(choice)
     state.complement = state.p.getComplement(choice)
     state.helix_length = len(state.sequence)
+    info_chromosome.text = f"You're Viewing \nChromosome: {index+1}"
     state.offset = 20000
 
     txt.enabled = False
@@ -249,9 +250,10 @@ def jump_to_gene(state, gene=None):
         print("Searching for gene:", search_field.text)
         result = find_gene(search_field.text)
     else:
+        
         print("Searching for gene:", gene)
         result = gene
-
+    
     if result is not None:
         chromosome = result["chromosome"]
         if state.p.sequenceChromosome(chromosome) is None:
@@ -260,6 +262,8 @@ def jump_to_gene(state, gene=None):
 
         start = result["start"] - 1
         end = result["end"]
+        info_chromosome.text = "You Have Selected \nWithin Chromosome: " + str(int(float(chromosome[3:-3])))
+        
         state.sequence = state.p.getSeq(chromosome)[start:end]
         state.complement = state.p.getComplement(chromosome)[start:end]
         state.helix_length = len(state.sequence)
@@ -449,6 +453,7 @@ right_panel = Entity(
     x=window.right.x + 5
 )
 
+
 right_background = make_accent_panel(
     parent=right_panel,
     scale=(.7, 1),
@@ -458,7 +463,15 @@ right_background = make_accent_panel(
 )
 
 panel_width = right_background.scale_x
-
+info_chromosome = Text(
+    parent=right_panel,
+    text='You\'re viewing \nchromosome:',
+    origin=(0, 0),
+    x=-.172,
+    y=-0.4,
+    scale=1.2,
+    font='../fonts/IBMPlexSans-Regular.ttf',
+)
 info_title = Text(
     parent=right_panel,
     text='Information:',
