@@ -1,7 +1,8 @@
-
-
 import sys
 from pathlib import Path
+
+import psycopg
+from psycopg.rows import dict_row
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
@@ -9,222 +10,199 @@ sys.path.append(str(PROJECT_ROOT))
 from src.ProtoDNASequencer import ProtoDNASequencer
 
 
-GTF_FILE = PROJECT_ROOT / "genomic.gtf"
 FASTA_FILE = PROJECT_ROOT / "GCF_000001405.40_GRCh38.p14_genomic.fna"
 
-sequencer = ProtoDNASequencer(FASTA_FILE)
-sequencer.load_sequence()
+# sequencer = ProtoDNASequencer(FASTA_FILE)
+# sequencer.load_sequence()
 
 
-def parse_attributes(attribute_string):
-    attributes = {}
+# ============================================================
+# DATABASE CONFIG
+# Must match the config used by your importer script.
+# ============================================================
 
-    for item in attribute_string.split(";"):
-        item = item.strip()
+DB_CONFIG = {
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "genome",
+    "user": "postgres",
+    "password": "password",
+}
 
-        if not item:
-            continue
 
-        parts = item.split(" ", 1)
+def get_connection():
+    """
+    Opens a new connection to the annotations database.
 
-        if len(parts) == 1:
-            attributes[parts[0]] = True
-            continue
+    Rows are returned as dictionaries (dict_row) so the rest of this
+    file can keep returning plain dicts, just like the old GTF-based
+    version did.
+    """
+    return psycopg.connect(**DB_CONFIG, row_factory=dict_row)
 
-        key, value = parts
-        attributes[key] = value.strip('"')
 
-    return attributes
+# ============================================================
+# LOOKUPS
+# ============================================================
+
 def find_gene_by_name(gene_name):
 
-    with open(GTF_FILE, "r") as file:
+    query = """
+        SELECT
+            seqid AS chromosome,
+            gene_name AS gene,
+            gene_id,
+            start_position AS start,
+            end_position AS "end",
+            strand
+        FROM annotations
+        WHERE feature = 'gene'
+          AND (gene_name = %(gene_name)s
+               OR attributes ->> 'gene_name' = %(gene_name)s)
+        LIMIT 1;
+    """
 
-        for line in file:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, {"gene_name": gene_name})
+            return cursor.fetchone()
 
-            if line.startswith("#"):
-                continue
-
-            fields = line.rstrip().split("\t")
-
-            if fields[2] != "gene":
-                continue
-
-            attributes = parse_attributes(fields[8])
-
-            if attributes.get("gene_name", attributes.get("gene")) == gene_name:
-                return {
-                    "chromosome": fields[0],
-                    "gene": attributes.get("gene_name", attributes.get("gene")),
-                    "gene_id": attributes.get("gene_id"),
-                    "start": int(fields[3]),
-                    "end": int(fields[4]),
-                    "strand": fields[6]
-                }
-
-    return None
 
 def find_gene(chromosome, position):
 
-    with open(GTF_FILE, "r") as file:
+    query = """
+        SELECT
+            gene_name AS gene,
+            seqid AS chromosome,
+            gene_id,
+            start_position AS start,
+            end_position AS "end",
+            strand
+        FROM annotations
+        WHERE feature = 'gene'
+          AND seqid = %(chromosome)s
+          AND start_position <= %(position)s
+          AND end_position >= %(position)s
+        LIMIT 1;
+    """
 
-        for line in file:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                query,
+                {"chromosome": chromosome, "position": position},
+            )
+            return cursor.fetchone()
 
-            if line.startswith("#"):
-                continue
 
-            fields = line.rstrip().split("\t")
-
-            if fields[0] != chromosome:
-                continue
-
-            if fields[2] != "gene":
-                continue
-
-            start = int(fields[3])
-            end = int(fields[4])
-
-            if start <= position <= end:
-
-                attributes = parse_attributes(fields[8])
-
-                return {
-                    "gene": attributes.get("gene_name", attributes.get("gene")),
-                    "chromosome": fields[0],
-                    "gene_id": attributes.get("gene_id"),
-                    "start": start,
-                    "end": end,
-                    "strand": fields[6]
-                }
-
-    return None
 def find_transcripts(gene_id):
 
-    transcripts = []
+    query = """
+        SELECT
+            transcript_id,
+            attributes ->> 'transcript_name' AS transcript_name,
+            gene_id,
+            start_position AS start,
+            end_position AS "end",
+            strand
+        FROM annotations
+        WHERE feature = 'transcript'
+          AND gene_id = %(gene_id)s
+        ORDER BY start_position;
+    """
 
-    with open(GTF_FILE, "r") as file:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, {"gene_id": gene_id})
+            return cursor.fetchall()
 
-        for line in file:
 
-            if line.startswith("#"):
-                continue
-
-            fields = line.rstrip().split("\t")
-
-            if fields[2] != "transcript":
-                continue
-
-            attributes = parse_attributes(fields[8])
-
-            if attributes.get("gene_id") != gene_id:
-                continue
-
-            transcripts.append({
-                "transcript_id": attributes.get("transcript_id"),
-                "transcript_name": attributes.get("transcript_name"),
-                "gene_id": gene_id,
-                "start": int(fields[3]),
-                "end": int(fields[4]),
-                "strand": fields[6]
-            })
-
-    return transcripts
 def find_exons(transcript_id):
 
-    exons = []
+    query = """
+        SELECT
+            attributes ->> 'exon_id' AS exon_id,
+            transcript_id,
+            start_position AS start,
+            end_position AS "end",
+            strand
+        FROM annotations
+        WHERE feature = 'exon'
+          AND transcript_id = %(transcript_id)s
+        ORDER BY start_position;
+    """
 
-    with open(GTF_FILE, "r") as file:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, {"transcript_id": transcript_id})
+            return cursor.fetchall()
 
-        for line in file:
 
-            if line.startswith("#"):
-                continue
+def find_cds(transcript_id):
+    """
+    CDS (coding sequence) blocks for a transcript -- NOT the same as
+    find_exons(). Exon boundaries include any 5'/3' UTR; CDS boundaries
+    mark only the actual coding portion, which is what codon-number math
+    needs. For a transcript with a 5' UTR, using find_exons() here would
+    systematically offset every codon number by the UTR's length (this is
+    exactly the bug that showed up testing HBB codon 7 -- it does have a
+    50nt 5' UTR, and every codon number came back 17 too high as a result).
+    """
 
-            fields = line.rstrip().split("\t")
+    query = """
+        SELECT
+            transcript_id,
+            start_position AS start,
+            end_position AS "end",
+            strand
+        FROM annotations
+        WHERE feature = 'CDS'
+          AND transcript_id = %(transcript_id)s
+        ORDER BY start_position;
+    """
 
-            if fields[2] != "exon":
-                continue
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, {"transcript_id": transcript_id})
+            return cursor.fetchall()
 
-            attributes = parse_attributes(fields[8])
 
-            if attributes.get("transcript_id") != transcript_id:
-                continue
+# ============================================================
+# SEQUENCE LOOKUP (unchanged - still reads from the FASTA file
+# via ProtoDNASequencer, since the database only stores
+# annotations, not the raw sequence itself)
+# ============================================================
 
-            exons.append({
-                "exon_id": attributes.get("exon_id"),
-                "transcript_id": transcript_id,
-                "start": int(fields[3]),
-                "end": int(fields[4]),
-                "strand": fields[6]
-            })
 
-    return exons
+# ============================================================
+# EXAMPLE USAGE
+# ============================================================
 
-def get_sequence(chromosome, start, end):
-    first_chromosome = sequencer.getRecord().id
+if __name__ == "__main__":
 
-    if chromosome != first_chromosome:
-        return None
+    first_chromosome_gene = find_gene_by_name("HBB")
+    print(first_chromosome_gene)
 
-    # GTF coordinates are 1-based and inclusive.
-    # Python slices are 0-based and end-exclusive.
-    return sequencer.getSeq()[start - 1:end]
+    if first_chromosome_gene:
+        print(
+            first_chromosome_gene["chromosome"],
+            first_chromosome_gene["start"],
+            first_chromosome_gene["end"],
+        )
 
-first_chromosome_gene = find_gene("NC_000001.11", 14000)
+        transcripts = find_transcripts(first_chromosome_gene["gene_id"])
+        print(transcripts)
 
-print(first_chromosome_gene)
+        if transcripts:
+            exons = find_exons(transcripts[0]["transcript_id"])
+            print(exons)
 
-if first_chromosome_gene:
-    print(get_sequence(
-        first_chromosome_gene["chromosome"],
-        first_chromosome_gene["start"],
-        first_chromosome_gene["end"],
-    ))
-# gene = find_gene("chr1", 14001)
-# print(gene)
-# print("\n")
+            if exons:
+                print(
+                    first_chromosome_gene["chromosome"],
+                    exons[0]["start"],
+                    exons[0]["end"],
+                )
 
-# transcripts = find_transcripts(gene["gene_id"])
-# print(transcripts)
-# print("\n")
-
-# exons = find_exons(transcripts[0]["transcript_id"])
-# print(exons)
-# print("\n")
-
-# print(get_sequence("chr1", exons[0]["start"], exons[0]["end"]))
-
-# [{'transcript_id': 'ENST00000832824.1', 'transcript_name': 'DDX11L16-260', 'gene_id': 'ENSG00000290825.2', 'start': 11121, 'end': 14413, 'strand': '+'},
-#   {'transcript_id': 'ENST00000832825.1', 'transcript_name': 'DDX11L16-261', 'gene_id': 'ENSG00000290825.2', 'start': 11125, 'end': 14405, 'strand': '+'},
-#     {'transcript_id': 'ENST00000832826.1', 'transcript_name': 'DDX11L16-262', 'gene_id': 'ENSG00000290825.2', 'start': 11410, 'end': 14413, 'strand': '+'},
-#       {'transcript_id': 'ENST00000832827.1', 'transcript_name': 'DDX11L16-263', 'gene_id': 'ENSG00000290825.2', 'start': 11411, 'end': 14413, 'strand': '+'},
-#         {'transcript_id': 'ENST00000832828.1', 'transcript_name': 'DDX11L16-264', 'gene_id': 'ENSG00000290825.2', 'start': 11426, 'end': 14409, 'strand': '+'},
-#           {'transcript_id': 'ENST00000832829.1', 'transcript_name': 'DDX11L16-265', 'gene_id': 'ENSG00000290825.2', 'start': 11770, 'end': 14416, 'strand': '+'},
-#             {'transcript_id': 'ENST00000832830.1', 'transcript_name': 'DDX11L16-266', 'gene_id': 'ENSG00000290825.2', 'start': 11819, 'end': 14413, 'strand': '+'},
-#               {'transcript_id': 'ENST00000832837.1', 'transcript_name': 'DDX11L16-273', 'gene_id': 'ENSG00000290825.2', 'start': 11823, 'end': 14406, 'strand': '+'},
-#                 {'transcript_id': 'ENST00000832836.1', 'transcript_name': 'DDX11L16-272', 'gene_id': 'ENSG00000290825.2', 'start': 11824, 'end': 14409, 'strand': '+'},
-#                   {'transcript_id': 'ENST00000832832.1', 'transcript_name': 'DDX11L16-268', 'gene_id': 'ENSG00000290825.2', 'start': 11824, 'end': 14413, 'strand': '+'},
-#                     {'transcript_id': 'ENST00000832833.1', 'transcript_name': 'DDX11L16-269', 'gene_id': 'ENSG00000290825.2', 'start': 11824, 'end': 14413, 'strand': '+'}, 
-#                     {'transcript_id': 'ENST00000832831.1', 'transcript_name': 'DDX11L16-267', 'gene_id': 'ENSG00000290825.2', 'start': 11824, 'end': 14416, 'strand': '+'},
-#                       {'transcript_id': 'ENST00000832834.1', 'transcript_name': 'DDX11L16-270', 'gene_id': 'ENSG00000290825.2', 'start': 11825, 'end': 14413, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832835.1', 'transcript_name': 'DDX11L16-271', 'gene_id': 'ENSG00000290825.2', 'start': 11828, 'end': 14416, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832839.1', 'transcript_name': 'DDX11L16-275', 'gene_id': 'ENSG00000290825.2', 'start': 11845, 'end': 14417, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832841.1', 'transcript_name': 'DDX11L16-277', 'gene_id': 'ENSG00000290825.2', 'start': 11847, 'end': 14415, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832840.1', 'transcript_name': 'DDX11L16-276', 'gene_id': 'ENSG00000290825.2', 'start': 11847, 'end': 14416, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832838.1', 'transcript_name': 'DDX11L16-274', 'gene_id': 'ENSG00000290825.2', 'start': 11847, 'end': 14421, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832842.1', 'transcript_name': 'DDX11L16-278', 'gene_id': 'ENSG00000290825.2', 'start': 11850, 'end': 14410, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000456328.3', 'transcript_name': 'DDX11L16-258', 'gene_id': 'ENSG00000290825.2', 'start': 11850, 'end': 14416, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832845.1', 'transcript_name': 'DDX11L16-281', 'gene_id': 'ENSG00000290825.2', 'start': 11854, 'end': 14410, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832843.1', 'transcript_name': 'DDX11L16-279', 'gene_id': 'ENSG00000290825.2', 'start': 11854, 'end': 14413, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832844.1', 'transcript_name': 'DDX11L16-280', 'gene_id': 'ENSG00000290825.2', 'start': 11854, 'end': 14413, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832847.1', 'transcript_name': 'DDX11L16-283', 'gene_id': 'ENSG00000290825.2', 'start': 11883, 'end': 14413, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832846.1', 'transcript_name': 'DDX11L16-282', 'gene_id': 'ENSG00000290825.2', 'start': 11883, 'end': 14414, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832848.1', 'transcript_name': 'DDX11L16-284', 'gene_id': 'ENSG00000290825.2', 'start': 12259, 'end': 14407, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832849.1', 'transcript_name': 'DDX11L16-285', 'gene_id': 'ENSG00000290825.2', 'start': 12524, 'end': 14410, 'strand': '+'}, 
-#                       {'transcript_id': 'ENST00000832823.1', 'transcript_name': 'DDX11L16-259', 'gene_id': 'ENSG00000290825.2', 'start': 14404, 'end': 24894, 'strand': '+'}]
-
-# [
-# {'exon_id': 'ENSE00004248723.1', 'transcript_id': 'ENST00000832824.1', 'start': 11121, 'end': 11211, 'strand': '+'},
-# {'exon_id': 'ENSE00004248735.1', 'transcript_id': 'ENST00000832824.1', 'start': 12010, 'end': 12227, 'strand': '+'}, 
-# {'exon_id': 'ENSE00003582793.1', 'transcript_id': 'ENST00000832824.1', 'start': 12613, 'end': 12721, 'strand': '+'}, 
-# {'exon_id': 'ENSE00004248730.1', 'transcript_id': 'ENST00000832824.1', 'start': 13453, 'end': 14413, 'strand': '+'}
-# ]
+            cds = find_cds(transcripts[0]["transcript_id"])
+            print(cds)

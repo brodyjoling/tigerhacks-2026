@@ -23,7 +23,7 @@ DB_CONFIG = {
 }
 
 # CHANGE THIS to the location of your GTF file.
-GTF_FILE = Path(r"data/ncbi_dataset/GCF_000001405.40/genomic.gtf")
+GTF_FILE = Path(r"data/genomic.gtf")
 
 # How many rows to send in one batch.
 BATCH_SIZE = 10_000
