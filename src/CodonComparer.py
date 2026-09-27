@@ -11,15 +11,15 @@ Pipeline
                              position, ref/alt allele, protein change).
 2. AnnotationLookup       -> ABSTRACT interface. Given a transcript + codon
    (ABC)                    number, returns the codon's genomic coordinates
-                             and strand. Your teammate's real, Postgres-
-                             backed GTF index implements this; a minimal
-                             in-memory stub is included so this file runs
-                             standalone before that database exists.
+                             and strand.
+     - PostgresAnnotationLookup: the real implementation, backed by your
+       teammate's Postgres 'annotations' table (find_transcripts/find_exons).
+     - MockAnnotationLookup: tiny in-memory stand-in, kept around for
+       offline dev/tests that shouldn't need a live DB connection.
 3. CodonComparer          -> pulls the 3 bases at those coordinates out of
-                             a parsed ChromosomeData (from the sequencer
-                             project), applies ClinVar's ref->alt
-                             substitution, and reports HEALTHY / MUTATED /
-                             UNEXPECTED.
+                             a parsed ChromosomeData (from ProtoDNASequencer),
+                             applies ClinVar's ref->alt substitution, and
+                             reports HEALTHY / MUTATED / UNEXPECTED.
 
 What ClinVar actually gives you
 --------------------------------
@@ -46,20 +46,33 @@ ClinVar's schema as commonly documented -- ClinVar has changed its schema
 before, so cross-check against the README(_VCF).txt shipped alongside
 whatever release you actually download before trusting field names blindly.
 
-Install: pip install pandas biopython
-(No VCF-parsing library required -- see read_clinvar_vcf's docstring for why.)
+Install: pip install biopython psycopg
+(pandas is no longer required -- read_clinvar_variant_summary streams the
+TSV with the csv module instead; see its docstring for why.)
 """
 
 from __future__ import annotations
 
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
-from ProtoDNASequencer import ProtoDNASequencer
-
 from Bio.Seq import Seq
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CLINVAR_VARIANT_SUMMARY = "data/variant_summary.txt.gz"
+CLINVAR_VCF = "data/clinvar.vcf.gz"
+sys.path.append(str(PROJECT_ROOT))
+
+from src.ProtoDNASequencer import ProtoDNASequencer
+
+# Adjust this import to match wherever your teammate's DB module actually
+# lives -- this assumes a module exposing find_transcripts()/find_exons()
+# (the same file with find_gene_by_name/find_gene/etc.).
+from parser import find_transcripts, find_exons, find_cds
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +106,14 @@ def read_clinvar_vcf(vcf_path: str):
     here; it'll just be slower than cyvcf2 on the full multi-million-row
     file. If that becomes a real bottleneck, revisit cyvcf2 under WSL2
     rather than fighting the Windows build.
+
+    This already streams line-by-line via gzip.open and never accumulates
+    rows, so memory stays flat regardless of file size (a 2GB VCF is fine).
+    The thing to watch is how you CONSUME it: `next(m for m in
+    read_clinvar_vcf(path) if ...)` stays lazy and stops at the first
+    match; `list(read_clinvar_vcf(path))` would force every one of
+    ClinVar's 1M+ records into memory at once -- avoid that regardless of
+    how much RAM you have.
     """
     import gzip
 
@@ -141,37 +162,61 @@ def read_clinvar_vcf(vcf_path: str):
 
 def read_clinvar_variant_summary(tsv_path: str, gene_symbol: Optional[str] = None):
     """
-    Parse ClinVar's tab-delimited variant_summary.txt(.gz) and yield
-    MutationRecord objects. Includes HGVS protein-change strings the raw
-    VCF doesn't carry on its own.
+    Stream-parse ClinVar's tab-delimited variant_summary.txt(.gz) one row
+    at a time, yielding matching MutationRecord objects.
+
+    NOT using pandas.read_csv() here anymore. variant_summary.txt has
+    millions of rows across many string columns; pd.read_csv() reads the
+    WHOLE file into a DataFrame before any filtering happens, and a
+    DataFrame of that shape costs meaningfully more RAM than the raw file
+    size (per-cell object overhead adds up fast at this scale) -- easily
+    enough to exhaust memory on a multi-GB download, regardless of how
+    narrow the eventual gene_symbol filter is. csv.DictReader + gzip
+    processes one row at a time and only ever holds the current row (plus
+    whatever MutationRecords you keep from it) in memory, independent of
+    file size -- matching how read_clinvar_vcf already works above.
 
     Filter to one gene up front (gene_symbol="HBB") -- the full file covers
-    every gene ClinVar has ever received a submission for.
+    every gene ClinVar has ever received a submission for, so without this
+    you'd still be iterating everything even though memory stays flat.
     """
-    import pandas as pd
+    import csv
+    import gzip
 
-    df = pd.read_csv(tsv_path, sep="\t", low_memory=False)
-    if gene_symbol:
-        df = df[df["GeneSymbol"] == gene_symbol]
+    opener = gzip.open if tsv_path.endswith(".gz") else open
 
-    for _, row in df.iterrows():
-        name = row.get("Name", "")
-        transcript_id = name.split("(")[0] if isinstance(name, str) else ""
-        protein_change = None
-        if isinstance(name, str) and "(p." in name:
-            protein_change = "p." + name.split("(p.")[1].rstrip(")")
+    with opener(tsv_path, "rt", newline="") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            if gene_symbol and gene_symbol not in (row.get("GeneSymbol") or "").split(";"):
+                continue
 
-        yield MutationRecord(
-            gene=row["GeneSymbol"],
-            transcript_id=transcript_id,
-            chrom=str(row["Chromosome"]),
-            genomic_position=int(row["PositionVCF"]),
-            ref_allele=row["ReferenceAlleleVCF"],
-            alt_allele=row["AlternateAlleleVCF"],
-            protein_change=protein_change,
-            clinical_significance=row.get("ClinicalSignificance"),
-            condition=row.get("PhenotypeList"),
-        )
+            name = row.get("Name") or ""
+            transcript_id = name.split("(")[0] if name else ""
+            protein_change = None
+            if "(p." in name:
+                protein_change = "p." + name.split("(p.")[1].rstrip(")")
+
+            # Not every row has a usable VCF-style position (some variant
+            # types in this file -- large structural variants especially --
+            # leave PositionVCF blank). Skip those rather than crashing the
+            # whole stream on one malformed row.
+            try:
+                genomic_position = int(row["PositionVCF"])
+            except (KeyError, ValueError):
+                continue
+
+            yield MutationRecord(
+                gene=row.get("GeneSymbol"),
+                transcript_id=transcript_id,
+                chrom=row.get("Chromosome"),
+                genomic_position=genomic_position,
+                ref_allele=row.get("ReferenceAlleleVCF"),
+                alt_allele=row.get("AlternateAlleleVCF"),
+                protein_change=protein_change,
+                clinical_significance=row.get("ClinicalSignificance"),
+                condition=row.get("PhenotypeList"),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +237,7 @@ class CodonLocation:
     strand -- CodonComparer is responsible for reversing/complementing for
     minus-strand genes, not this class.
     """
-    chrom: str
+    chrom: Optional[str]
     genomic_positions: tuple  # (int, int, int), ascending
     strand: Strand
     codon_number: int
@@ -201,11 +246,9 @@ class CodonLocation:
 class AnnotationLookup(ABC):
     """
     Abstract interface to an annotated-genome index (built from a GTF).
-
-    Your teammate's real, Postgres-backed implementation and any local
-    test implementation (e.g. gffutils-based, see the skeleton at the
-    bottom of this file) both just need to satisfy this contract.
-    CodonComparer never needs to know which one it's talking to.
+    PostgresAnnotationLookup (real) and MockAnnotationLookup (offline
+    testing) both just need to satisfy this contract -- CodonComparer never
+    needs to know which one it's talking to.
     """
 
     @abstractmethod
@@ -223,19 +266,137 @@ class AnnotationLookup(ABC):
         raise NotImplementedError
 
 
+class PostgresAnnotationLookup(AnnotationLookup):
+    """
+    Real AnnotationLookup, backed by the Postgres 'annotations' table via
+    find_cds() (not find_exons() -- see below).
+
+    IMPORTANT CAVEATS -- read before trusting this beyond a quick test:
+
+    1. [RESOLVED] This now queries feature='CDS' rows via find_cds(),
+       not feature='exon' rows. Exon boundaries include any 5'/3' UTR;
+       CDS boundaries mark only the actual coding portion. Using exons
+       here previously caused every codon number to be off by a constant
+       amount equal to the UTR's length in codons -- confirmed concretely
+       against HBB, which has a 50nt 5' UTR (NM_000518 CDS starts at
+       mRNA position 51): codon 7 was coming back as codon 24, exactly
+       17 codons (51nt) too high, matching the UTR length.
+
+    2. A codon whose 3 bases straddle a splice junction (span two CDS
+       blocks) is NOT handled -- get_codon_location raises
+       NotImplementedError for that case rather than returning wrong
+       coordinates. Extending CodonComparer._extract_codon to pull from
+       two genomic ranges instead of one contiguous slice is required
+       before this covers that case.
+
+    3. 'chromosome' isn't available at the CDS/transcript level in the
+       given schema (only find_gene/find_gene_by_name select seqid), so
+       CodonLocation.chrom comes back None here. CodonComparer never reads
+       it, so this isn't a functional blocker -- just flagging it's not
+       populated.
+    """
+
+    def __init__(self, find_transcripts_fn=find_transcripts, find_cds_fn=find_cds):
+        # Passed in as parameters (with these as defaults) rather than only
+        # ever using the module-level import directly, so this class can be
+        # unit-tested with fake functions instead of a live DB connection.
+        self._find_transcripts = find_transcripts_fn
+        self._find_cds = find_cds_fn
+        self._cds_cache = {}   # transcript_id -> (ordered_cds_blocks, strand)
+
+    def _ordered_cds(self, transcript_id):
+        """
+        CDS blocks for a transcript, in transcript (5'->3') order, each
+        annotated with its cumulative CDS-relative offset. Memoized per
+        transcript_id -- boundaries don't change between calls, and this
+        avoids re-querying Postgres for every single codon lookup.
+        """
+        if transcript_id in self._cds_cache:
+            return self._cds_cache[transcript_id]
+
+        cds_blocks = self._find_cds(transcript_id)
+        if not cds_blocks:
+            raise KeyError(f"No CDS blocks found for transcript '{transcript_id}'.")
+
+        strand = Strand(cds_blocks[0]["strand"])
+        # find_cds() already returns rows ordered ascending by genomic
+        # start. For a minus-strand transcript, 5'->3' runs in descending
+        # genomic order, so reverse to get transcript order.
+        ordered = list(cds_blocks) if strand is Strand.PLUS else list(reversed(cds_blocks))
+
+        cumulative = 0
+        for block in ordered:
+            block_length = block["end"] - block["start"] + 1
+            block["_cds_offset_start"] = cumulative   # 0-based, CDS-relative
+            block["_length"] = block_length
+            cumulative += block_length
+
+        self._cds_cache[transcript_id] = (ordered, strand)
+        return ordered, strand
+
+    def get_codon_number_for_position(self, transcript_id: str, genomic_position: int) -> Optional[int]:
+        ordered, strand = self._ordered_cds(transcript_id)
+
+        for block in ordered:
+            if block["start"] <= genomic_position <= block["end"]:
+                if strand is Strand.PLUS:
+                    within_block_offset = genomic_position - block["start"]
+                else:
+                    within_block_offset = block["end"] - genomic_position
+                cds_offset = block["_cds_offset_start"] + within_block_offset
+                return cds_offset // 3 + 1
+
+        return None  # not in any CDS block of this transcript (intronic/UTR)
+
+    def get_codon_location(self, transcript_id: str, codon_number: int) -> CodonLocation:
+        ordered, strand = self._ordered_cds(transcript_id)
+
+        cds_start = (codon_number - 1) * 3
+        genomic_positions = [
+            self._cds_offset_to_genomic(ordered, strand, cds_start + i)
+            for i in range(3)
+        ]
+
+        if max(genomic_positions) - min(genomic_positions) != 2:
+            raise NotImplementedError(
+                f"Codon {codon_number} of {transcript_id} spans a splice "
+                f"junction -- its 3 bases aren't 3 contiguous genomic "
+                f"positions. CodonComparer/_extract_codon needs extending "
+                f"to handle this case."
+            )
+
+        return CodonLocation(
+            chrom=None,  # see class docstring, caveat 3
+            genomic_positions=tuple(sorted(genomic_positions)),
+            strand=strand,
+            codon_number=codon_number,
+        )
+
+    @staticmethod
+    def _cds_offset_to_genomic(ordered_cds, strand, cds_offset):
+        for block in ordered_cds:
+            if block["_cds_offset_start"] <= cds_offset < block["_cds_offset_start"] + block["_length"]:
+                within_block_offset = cds_offset - block["_cds_offset_start"]
+                if strand is Strand.PLUS:
+                    return block["start"] + within_block_offset
+                else:
+                    return block["end"] - within_block_offset
+        raise ValueError(f"CDS offset {cds_offset} is past the end of this transcript's CDS.")
+
 class MockAnnotationLookup(AnnotationLookup):
     """
-    Minimal in-memory stand-in for local development, before the real
-    Postgres-backed GTF index exists. Uses small, clearly-fake coordinates
-    (NOT real GRCh38 positions) so the plumbing can be exercised without
-    asserting unverified genomic coordinates as fact. Swap for the real
-    implementation later -- nothing else in this file changes.
+    Minimal in-memory stand-in for offline dev/tests that shouldn't need a
+    live Postgres connection. Uses the REAL genomic coordinates for HBB
+    codon 7 (GRCh38 chr11), derived as follows: HGVS c.20 is confirmed to
+    be the exact middle nucleotide of codon 7, and reversing a 3-element
+    sequence for a minus-strand gene always leaves the middle element in
+    the middle -- so the codon spans 5,227,001-5,227,003.
     """
 
     def __init__(self):
         self._codon = CodonLocation(
-            chrom="11",
-            genomic_positions=(100, 101, 102),   # toy positions, not real
+            chrom="NC_000011.10",
+            genomic_positions=(5_227_001, 5_227_002, 5_227_003),
             strand=Strand.MINUS,
             codon_number=7,
         )
@@ -297,9 +458,9 @@ class CodonComparer:
         order -- transcript order matches genomic order.
 
         Minus strand: transcript 5'->3' runs opposite to genomic order, so
-        read chrom_data.complement (already computed once at load time --
-        this is exactly why keeping it precomputed was worth it) across the
-        same span, then reverse it into transcript order.
+        read chrom_data.complement (already computed once at sequencing
+        time -- this is exactly why keeping it precomputed was worth it)
+        across the same span, then reverse it into transcript order.
         """
         start, _, end = location.genomic_positions  # already ascending
 
@@ -370,29 +531,27 @@ class CodonComparer:
 # ---------------------------------------------------------------------------
 
 def main():
-    # Swap in real data: chrom_data = your_sequencer.getChromosome("NC_000011.10")
-    # This FakeChromData uses small toy coordinates matching MockAnnotationLookup's
-    # toy positions (100-102) -- NOT real GRCh38 sequence.
-    # class FakeChromData:
-    #     seq = Seq("N" * 100 + "ACT" + "N" * 50)          # positions 101-103 -> "ACT"
-    #     complement = Seq("N" * 100 + "TGA" + "N" * 50)    # complement of the above
-
     p = ProtoDNASequencer("data/GCF_000001405.40_GRCh38.p14_genomic.fna")
     p.load_sequence()
-    chrom_data = p.getChromosome("NC_000011.10")
 
-    lookup = MockAnnotationLookup()
+    # sequenceChromosome(), not getChromosome() -- the sequencer is lazy now,
+    # so chr11 has to be explicitly parsed before anything can read from it.
+    chrom_data = p.sequenceChromosome("NC_000011.10")
+
+    # Real DB-backed lookup. Swap for MockAnnotationLookup() if Postgres
+    # isn't running / you just want to sanity-check the plumbing offline.
+    lookup = PostgresAnnotationLookup()
     comparer = CodonComparer(lookup)
 
-    mutation = MutationRecord(
-        gene="HBB",
-        transcript_id="NM_000518.5",
-        chrom="11",
-        genomic_position=101,
-        ref_allele="A",
-        alt_allele="C",
-        protein_change="p.Glu7Val",
-        clinical_significance="Pathogenic",
+    # Streams the TSV row-by-row (see read_clinvar_variant_summary's
+    # docstring) rather than loading the whole multi-GB file into memory.
+    # gene_symbol="HBB" alone still returns every HBB variant ClinVar has
+    # -- the position/allele filter below picks out the specific
+    # sickle-cell record.
+    mutations = read_clinvar_variant_summary(str(CLINVAR_VARIANT_SUMMARY), gene_symbol="HBB")
+    mutation = next(
+        m for m in mutations
+        if m.genomic_position == 5_227_002 and m.ref_allele == "T" and m.alt_allele == "A"
     )
 
     result = comparer.compare(chrom_data, mutation)
@@ -401,36 +560,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# ---------------------------------------------------------------------------
-# Sketch: what a real AnnotationLookup implementation has to solve
-# ---------------------------------------------------------------------------
-# class GffutilsAnnotationLookup(AnnotationLookup):
-#     """
-#     Skeleton only -- the hard part isn't the library call, it's mapping a
-#     codon number to genomic coordinates correctly when a transcript's CDS
-#     spans multiple exons (a codon can straddle a splice junction, so its
-#     3 bases aren't always 3 consecutive genomic positions).
-#
-#     General approach:
-#       1. Get the transcript's CDS features, ordered 5'->3' along the
-#          transcript (reverse genomic order for minus-strand genes).
-#       2. Build a cumulative-length index across those CDS chunks.
-#       3. codon_number -> cDNA offset (codon_number - 1) * 3 -> walk the
-#          cumulative index to find which CDS chunk(s) that offset falls
-#          in, and translate back to genomic coordinate(s) -- possibly 2
-#          genomic ranges if the codon straddles a splice junction.
-#     Your teammate's Postgres schema may already store CDS-relative
-#     coordinates precomputed, which would make this much simpler than
-#     doing it here -- worth checking before reimplementing it.
-#     """
-#     def __init__(self, gtf_path: str, db_path: str = ":memory:"):
-#         import gffutils
-#         self.db = gffutils.create_db(gtf_path, db_path, force=True, keep_order=True)
-#
-#     def get_codon_location(self, transcript_id, codon_number):
-#         raise NotImplementedError("see docstring above")
-#
-#     def get_codon_number_for_position(self, transcript_id, genomic_position):
-#         raise NotImplementedError("see docstring above")

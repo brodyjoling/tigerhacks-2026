@@ -138,6 +138,35 @@ def find_exons(transcript_id):
             return cursor.fetchall()
 
 
+def find_cds(transcript_id):
+    """
+    CDS (coding sequence) blocks for a transcript -- NOT the same as
+    find_exons(). Exon boundaries include any 5'/3' UTR; CDS boundaries
+    mark only the actual coding portion, which is what codon-number math
+    needs. For a transcript with a 5' UTR, using find_exons() here would
+    systematically offset every codon number by the UTR's length (this is
+    exactly the bug that showed up testing HBB codon 7 -- it does have a
+    50nt 5' UTR, and every codon number came back 17 too high as a result).
+    """
+
+    query = """
+        SELECT
+            transcript_id,
+            start_position AS start,
+            end_position AS "end",
+            strand
+        FROM annotations
+        WHERE feature = 'CDS'
+          AND transcript_id = %(transcript_id)s
+        ORDER BY start_position;
+    """
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, {"transcript_id": transcript_id})
+            return cursor.fetchall()
+
+
 # ============================================================
 # SEQUENCE LOOKUP (unchanged - still reads from the FASTA file
 # via ProtoDNASequencer, since the database only stores
@@ -174,3 +203,6 @@ if __name__ == "__main__":
                     exons[0]["start"],
                     exons[0]["end"],
                 )
+
+            cds = find_cds(transcripts[0]["transcript_id"])
+            print(cds)
