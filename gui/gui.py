@@ -529,9 +529,9 @@ search_field.highlight_color = color_palette.get('highlight2')
 search_placeholder = Text(
     parent=search_field,
     text='Enter Gene or Line',
-    origin=(-0.5, 1),
+    origin=(-0.5, 0),
     color=color.rgba(255, 255, 255, 120),
-    scale=1,
+    scale=5,
     z=-0.1,
     font='../fonts/IBMPlexSans-Regular.ttf',
 )
